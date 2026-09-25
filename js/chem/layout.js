@@ -76,9 +76,10 @@ export function layout(mol, opts = {}) {
         const phi = ang(c, pos[A]);
         dirs = kids.length === 1 ? [phi] : [phi + 35, phi - 35];
       } else if (!parentN.length || A === root && R.of[A] < 0 && parentN.length === 0) {
-        /* 뿌리: 120° 간격 (180° 로 펴면 cis/trans 를 읽을 수 없다) */
+        /* 뿌리: 120° 간격 (180° 로 펴면 cis/trans 를 읽을 수 없다). 단 삼중결합 · C=C=C 의 sp 원자는 일직선 */
         const t0 = theta[A];
-        dirs = [[t0 + 60], [t0 + 60, t0 - 60], [t0 + 60, t0 - 60, t0 + 180], [t0 + 45, t0 - 45, t0 + 135, t0 - 135]][Math.min(kids.length, 4) - 1];
+        if (linear(A) && kids.length === 2) dirs = [t0 + 60, t0 + 240];
+        else dirs = [[t0 + 60], [t0 + 60, t0 - 60], [t0 + 60, t0 - 60, t0 + 180], [t0 + 45, t0 - 45, t0 + 135, t0 - 135]][Math.min(kids.length, 4) - 1];
       } else {
         const t = theta[A];
         if (linear(A) && kids.length === 1) dirs = [t];
@@ -148,7 +149,7 @@ export function layout(mol, opts = {}) {
     const flipSet = sideB.size <= sideA.size ? sideB : sideA;
     reflect(mol, flipSet, s.a, s.b);
   }
-  untangle(mol, R, stereo);
+  untangle(mol, R, stereo, linear);
   if (opts.orient !== false) orient(mol);
   return mol;
 }
@@ -225,11 +226,13 @@ function cross(p1, p2, p3, p4) {
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
 /* 겹침 풀기: 고리 밖 단일결합마다 작은 쪽을 뒤집거나 돌려 본다 */
-function untangle(mol, R, stereo) {
+function untangle(mol, R, stereo, linear) {
   let score = clashScore(mol);
   if (score < 1e-6) return;
   const locked = new Set();
   for (const s of stereo) { locked.add(s.a); locked.add(s.b); }
+  /* sp 원자(삼중결합 · C=C=C)에서 가지를 돌리면 180° 가 깨진다 */
+  mol.atoms.forEach((_, i) => { if (linear(i)) locked.add(i); });
   for (let pass = 0; pass < 4 && score > 1e-6; pass++) {
     for (let k = 0; k < mol.bonds.length && score > 1e-6; k++) {
       const b = mol.bonds[k];
@@ -242,7 +245,7 @@ function untangle(mol, R, stereo) {
         const trials = [() => reflect(mol, side, u, v), () => rotate(mol, side, u, 60), () => rotate(mol, side, u, -60), () => rotate(mol, side, u, 30), () => rotate(mol, side, u, -30)];
         let bestS = score, bestT = -1;
         trials.forEach((f, ti) => {
-          if (ti > 0 && locked.has(u)) return; /* 이중결합 원자에서는 각도를 바꾸지 않음 */
+          if (ti > 0 && locked.has(u)) return; /* 이중결합 · sp 원자에서는 각도를 바꾸지 않음 */
           f(); const s = clashScore(mol); if (s < bestS - 1e-9) { bestS = s; bestT = ti; } restore();
         });
         if (bestT >= 0) { trials[bestT](); score = bestS; }

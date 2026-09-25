@@ -208,6 +208,8 @@ function flipped(pm, prev, m, cur) {
 export function noteText(n) {
   switch (n.type) {
     case 'enol': return { tone: 'warn', t: `${b('엔올(enol)')}: 이중결합 탄소에 OH 가 붙은 구조는 불안정해서 곧바로 케토 형태${n.keto ? ` ${code(n.keto.nameEn)}(${n.keto.nameKo})${jo(n.keto.nameKo, '로')}` : '로'} 바뀝니다 (케토–엔올 호변 이성질).` };
+    case 'ynol': return { tone: 'warn', t: `${b('이놀(ynol)')}: 삼중결합 탄소에 OH 가 붙은 구조는 엔올보다도 훨씬 불안정해서, 곧바로 H 가 옮겨 가며 케텐(C=C=O)으로 바뀝니다. 실제로는 거의 존재하지 않습니다.` };
+    case 'ynamine': return { tone: 'warn', t: `${b('이나민(ynamine)')}: 삼중결합 탄소에 N–H 가 붙으면 케텐이민(C=C=N)으로 쉽게 바뀝니다. 질소에 H 가 없으면(다이알킬 이나민) 합성에 씁니다.` };
     case 'enamine': return { tone: 'warn', t: `${b('엔아민')}: 이중결합 탄소에 NH₂ 가 붙은 구조는 이민(C=N) 형태로 쉽게 바뀝니다.` };
     case 'gemdiol': return { tone: 'warn', t: `${b('같은 탄소에 OH 둘(수화물)')}: 대부분 물이 빠져 카보닐(C=O)이 됩니다.` };
     case 'halohydrin': return { tone: 'warn', t: `${b('같은 탄소에 OH 와 할로젠')}: HX 가 빠져 카보닐(C=O)이 되기 쉬운 불안정한 구조입니다.` };

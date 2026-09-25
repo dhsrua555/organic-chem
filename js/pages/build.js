@@ -257,7 +257,7 @@ export function mount(root, app, params) {
       const k = 2 + Math.floor(Math.random() * 4);
       for (let j = 0; j < k; j++) { const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0); const r = attach(m, pick(at), pick(pool)); if (r.mol) m = r.mol; }
       const e = entry(m);
-      if (!e.res || (e.res.notes || []).some(n => ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'].includes(n.type))) continue;
+      if (!e.res || (e.res.notes || []).some(n => ['enol', 'enamine', 'ynol', 'ynamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'].includes(n.type))) continue;
       S.pick = null; commit(m, null, true); return;
     }
   });

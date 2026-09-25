@@ -8,7 +8,7 @@ import { defineMissing, flipCenter, stereoInfo, stereoSites } from '../chem/ster
 import { centerHTML } from '../rsview.js';
 import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
 
-const UNSTABLE = ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
+const UNSTABLE = ['enol', 'enamine', 'ynol', 'ynamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
 const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'oxo', 'C2H5', 'vinyl', 'phenyl'];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const RX_SUBS = ['CCC(C)Br', 'CC(C)(C)Br', 'CCCBr', 'CC(C)C(C)Br', 'BrCc1ccccc1', 'CC(O)CC', 'CCCO', 'CC(C)(C)O', 'OC1CCCCC1', 'CC=C', 'CC(C)=CC', 'C1=CCCCC1', 'CC(C)(C)C=C',

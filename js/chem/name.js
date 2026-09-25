@@ -996,6 +996,10 @@ function notesFor(mol, info, res) {
       notes.push({ type: 'enol', atom: i, keto });
     }
     if (onCC && f.N.some(n => A[n].h > 0)) notes.push({ type: 'enamine', atom: i });
+    /* 삼중결합 탄소의 OH · NH (이놀 · 이나민): 곧바로 케텐 · 케텐이민으로 바뀐다 */
+    const onYne = mol.nb[i].some(n => n.o === 3 && A[n.j].el === 'C');
+    if (onYne && f.OH.length) notes.push({ type: 'ynol', atom: i });
+    if (onYne && f.N.some(n => A[n].h > 0)) notes.push({ type: 'ynamine', atom: i });
     if (f.OH.length >= 2) notes.push({ type: 'gemdiol', atom: i });
     else if (f.OH.length && f.halo.length && !f.kind) notes.push({ type: 'halohydrin', atom: i });
     else if (f.OH.length && f.N.length && !f.kind) notes.push({ type: 'hemiaminal', atom: i });

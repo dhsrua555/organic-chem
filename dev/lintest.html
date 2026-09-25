@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>sp 탄소가 곧게 그려지는지</title>
+<pre id="out"></pre>
+<script type="module">
+import { parseSmiles } from '../js/chem/core.js';
+import { layout } from '../js/chem/layout.js';
+import { TEMPLATES, fromSmiles, attach, cycleBond } from '../js/chem/edit.js';
+/* 삼중결합 · 누적 이중결합(C=C=C) 원자는 두 결합이 180° 여야 한다 */
+const bent = m => {
+  const out = [];
+  m.atoms.forEach((a, i) => {
+    const nb = m.nb[i];
+    if (nb.length !== 2) return;
+    if (!(nb.some(x => x.o === 3) || nb.filter(x => x.o === 2).length === 2)) return;
+    const [p, q] = nb.map(x => m.atoms[x.j]);
+    const v1 = [p.x - a.x, p.y - a.y], v2 = [q.x - a.x, q.y - a.y];
+    const ang = Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / Math.hypot(...v1) / Math.hypot(...v2)))) * 180 / Math.PI;
+    if (ang < 175) out.push(Math.round(ang));
+  });
+  return out;
+};
+const L = [];
+let badS = 0;
+for (const s of ['OC#C', 'C#CO', 'CC#CC', 'C#CC(O)C', 'C#Cc1ccccc1', 'CC#CC#CC', 'C=C=C', 'CC=C=CC', 'N#CC(C)C', 'OCC#CCO', 'C#CC#C']) {
+  const m = parseSmiles(s); layout(m);
+  const m0 = parseSmiles(s); layout(m0, { root: 0 });
+  if (bent(m).length || bent(m0).length) badS++;
+  L.push(`${s.padEnd(14)} 기본: ${bent(m).join(',') || 'ok'}   첫 원자에서 시작: ${bent(m0).join(',') || 'ok'}`);
+}
+/* 조립 흐름: 에타인 · 프로파인에 조각 붙이기 */
+let seed = 3; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const pick = a => a[Math.floor(rnd() * a.length)];
+const frags = ['CH3', 'OH', 'NH2', 'Cl', 'COOH', 'CHO', 'C2H5', 'phenyl', 'OCH3', 'CN', 'ethynyl', 'vinyl', 'cyclohexyl'];
+let n = 0, bad = 0; const ex = [];
+for (let t = 0; t < 3000; t++) {
+  let m = fromSmiles(pick(['C#C', 'CC#C', 'CC#CC', 'C#Cc1ccccc1', 'C=CC=C', 'CCCC']));
+  for (let k = 0; k < 1 + Math.floor(rnd() * 5); k++) {
+    if (rnd() < 0.15 && m.bonds.length) { const r = cycleBond(m, Math.floor(rnd() * m.bonds.length)); if (r.mol) m = r.mol; continue; }
+    const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0 && m.atoms[i].el === 'C');
+    if (!at.length) break;
+    const r = attach(m, pick(at), pick(frags)); if (r.mol) m = r.mol;
+  }
+  const b = bent(m);
+  if (m.atoms.some((a, i) => m.nb[i].some(x => x.o === 3))) n++;
+  if (b.length) { bad++; if (ex.length < 8) ex.push(b.join(',')); }
+}
+L.push(`무작위 조립 3000개 (삼중결합 있는 것 ${n}): 휘어진 sp 원자가 있는 분자 ${bad}  예: ${ex.join(' | ')}`);
+L.push(bad || badS ? 'RESULT: FAIL' : 'RESULT: ALL OK');
+document.getElementById('out').textContent = L.join('\n');
+window.__done = true;
+</script>
