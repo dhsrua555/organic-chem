@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HEXA 유기화학</title>
+<meta name="description" content="벤젠 고리와 프로펜 사슬에 작용기를 붙이며 IUPAC 이름이 어떻게 바뀌는지 한 단계씩 배우는 유기화학 스튜디오. 작용기 도감 · 명명법 · 퀴즈.">
+<meta name="theme-color" content="#03060f">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HEXA 유기화학">
+<meta property="og:title" content="HEXA 유기화학 · 작용기와 이름">
+<meta property="og:description" content="작용기를 붙이면 이름이 어떻게 바뀔까? 벤젠 · 프로펜에 직접 붙여 보며 배우는 IUPAC 명명법.">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:url" content="https://dhsrua555.github.io/organic-chem/">
+<meta property="og:image" content="https://dhsrua555.github.io/organic-chem/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://dhsrua555.github.io/organic-chem/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2303060f'/%3E%3Cpath d='M32 9l20 11.5v23L32 55 12 43.5v-23z' fill='none' stroke='%232f86ff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='none' stroke='%23d4e2ff' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Rajdhani:wght@300;500;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<div class="guides" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<header class="hud hud-top">
+  <a class="tag" href="#home"><span class="bar" aria-hidden="true"></span><span class="tag-en">ORGANIC CHEMISTRY</span><span class="tag-ko">여섯 꼭짓점에서 시작하는 유기화학</span></a>
+  <button id="menu-btn" class="menu-btn" type="button" aria-expanded="false" aria-controls="menu">
+    <span class="mb-label" id="menu-label">MENU</span><span class="mb-lines" aria-hidden="true"><i></i><i></i><i></i></span>
+  </button>
+</header>
+
+<main id="view" tabindex="-1"></main>
+
+<footer class="hud hud-bottom">
+  <a class="logo" href="#home" aria-label="HEXA 처음 화면">
+    <svg viewBox="0 0 40 40" aria-hidden="true"><path class="lg-hex" d="M20 3l14.7 8.5v17L20 37 5.3 28.5v-17z"/><circle class="lg-ring" cx="20" cy="20" r="7.2"/></svg>
+    <b>HEXA</b><small>유기화학<br>스튜디오</small>
+  </a>
+  <div class="hud-tools">
+    <div class="lang" role="group" aria-label="이름을 먼저 보여 줄 언어">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="ko" aria-pressed="false">한</button>
+    </div>
+    <button id="motion" class="wave" type="button" aria-pressed="true" aria-label="배경 움직임 끄기">
+      <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M1 10h7l3-7 5 14 5-13 4 10 3-4h11"/></svg>
+    </button>
+    <span class="ver">IUPAC 2013</span>
+  </div>
+</footer>
+
+<nav id="menu" class="menu" aria-label="전체 메뉴" hidden>
+  <div class="menu-blocks" aria-hidden="true"></div>
+  <ol class="menu-list">
+    <li><a href="#build" data-n="01"><span class="mi-en">BUILD</span><span class="mi-ko">분자 조립</span></a></li>
+    <li><a href="#groups" data-n="02"><span class="mi-en">FUNCTIONAL GROUPS</span><span class="mi-ko">작용기 도감</span></a></li>
+    <li><a href="#rules" data-n="03"><span class="mi-en">NOMENCLATURE</span><span class="mi-ko">명명법 다섯 단계</span></a></li>
+    <li><a href="#quiz" data-n="04"><span class="mi-en">QUIZ</span><span class="mi-ko">이름 맞히기</span></a></li>
+  </ol>
+</nav>
+
+<div id="loader" class="loader" role="status" aria-live="polite">
+  <svg viewBox="0 0 120 120" aria-hidden="true"><path class="ld-hex" d="M60 10l43.3 25v50L60 110 16.7 85V35z"/><path class="ld-in" d="M60 26l29.4 17v34L60 94 30.6 77V43z"/></svg>
+  <p class="ld-t">HEXA</p>
+  <p class="ld-s"><span id="ld-pct">0</span>% · 분자를 조립하는 중</p>
+</div>
+
+<noscript><p class="noscript">이 사이트는 자바스크립트가 필요합니다.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
