@@ -4,7 +4,7 @@ import { startFx } from './fx.js';
 import { initReport } from './report.js';
 
 /* 패치 노트(CHANGELOG.md · GitHub Releases)의 번호와 같게 */
-const VERSION = 'v6.0 · 2026-09-26';
+const VERSION = 'v6.1 · 2026-09-26';
 $('#menu-ver').textContent = VERSION.split(' ')[0];
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
@@ -72,7 +72,7 @@ async function render() {
   if (scene) scene.setAnchor(anchorFor(route));
   current = mod.mount(view, app, params) || null;
   $$('.menu-list a').forEach(a => { if (a.getAttribute('href') === '#' + route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  const t = { home: 'HEXA 유기화학', build: '분자 조립 · HEXA', react: '반응 예측 · HEXA', groups: '작용기 도감 · HEXA', rules: '명명법 · HEXA', quiz: '퀴즈 · HEXA' }[route];
+  const t = { home: 'HEXA 유기화학', build: '구조식 편집기 · HEXA', react: '반응 예측 · HEXA', groups: '작용기와 우선순위 · HEXA', rules: 'IUPAC 명명법 · HEXA', quiz: '연습 문제 · HEXA' }[route];
   document.title = t;
 }
 

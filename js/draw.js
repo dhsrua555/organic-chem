@@ -35,7 +35,7 @@ function spans(seq) {
 
 /* opts: { interactive, mode, locants, chain, stars, pick, tool, hl(Set 강조 원자), compact, cip(입체중심 원자 번호), mark(★ 표시할 원자) } */
 export function drawMolecule(mol, res, opts = {}) {
-  const mode = opts.mode || 'atoms';
+  const mode = opts.mode || 'skeletal';
   const A = mol.atoms, R = rings(mol);
   const W = opts.stars === false ? new Map() : wedges(mol);
   const pri = res ? res.principalAtoms || new Set() : new Set();

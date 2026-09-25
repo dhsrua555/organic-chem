@@ -14,6 +14,10 @@ export const store = {
   set(k, v) { try { localStorage.setItem('hexa:' + k, JSON.stringify(v)); } catch { /* 저장 안 됨 */ } }
 };
 
+/* 구조식 표기: 'skeletal' 골격 구조식(기본) / 'atoms' 축약 구조식 (모든 탄소에 CH₃ · CH₂ 표시) */
+export const drawMode = () => store.get('drawMode2', 'skeletal');
+export const setDrawMode = m => store.set('drawMode2', m);
+
 /* 이름 표기 언어 (EN 먼저 / 한글 먼저) */
 let lang = store.get('lang', 'en');
 const langSubs = new Set();

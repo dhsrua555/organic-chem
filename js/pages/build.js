@@ -9,15 +9,15 @@ import { rsCardHTML } from '../rsview.js';
 import { CLASS } from '../chem/name.js';
 import { steps, diff, noteText } from '../chem/explain.js';
 import { drawMolecule, templateIcon } from '../draw.js';
-import { entry, molecule, tokensHTML, formulaHTML, esc, store, getLang, onLang, pick, copyText, tabsHTML, tabNow } from '../ui.js';
+import { entry, molecule, tokensHTML, formulaHTML, esc, store, getLang, onLang, pick, copyText, tabsHTML, tabNow, drawMode, setDrawMode } from '../ui.js';
 
 const LBL = s => s.replace(/(\d)/g, '<sub>$1</sub>');
 const TOOLS = [
-  ['add', '붙이기', '원자를 누르면 고른 조각이 붙습니다 (H 하나를 바꿈)'],
-  ['bond', '결합', '탄소–탄소 결합을 누를 때마다 단일 → 이중 → 삼중'],
-  ['erase', '지우기', '원자를 누르면 그 원자와 바깥 가지를 지웁니다'],
-  ['flip', 'E/Z', '이중결합을 누르면 E ↔ Z 로 뒤집습니다'],
-  ['rs', 'R/S', '입체중심(그림의 R · S)이나 고리에 치환기가 달린 탄소를 누르면 배열을 뒤집습니다 (R ↔ S, cis ↔ trans)']
+  ['add', '치환', '원자를 선택하면 수소 하나를 지정한 치환기로 바꿉니다'],
+  ['bond', '결합', 'C–C 결합을 선택할 때마다 결합 차수가 1 → 2 → 3 으로 바뀝니다'],
+  ['erase', '삭제', '선택한 원자와 그 원자에 딸린 곁사슬을 삭제합니다'],
+  ['flip', 'E/Z', '이중결합을 선택하면 E ↔ Z 배치가 바뀝니다'],
+  ['rs', 'R/S', '입체중심 또는 치환된 고리 탄소를 선택하면 배열이 반전됩니다 (R ↔ S, cis ↔ trans)']
 ];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const FAMOUS = TEMPLATES.filter(t => t.kind === 'famous');
@@ -32,22 +32,22 @@ export function mount(root, app, params) {
   try { start = params && params.smiles ? fromSmiles(params.smiles) : params && params.mol ? params.mol : saved ? unpack(saved.mol) : fromSmiles('C=CC'); }
   catch { start = fromSmiles('C=CC'); }
   const S = {
-    mol: defineMissing(start), tool: 'add', sel: (saved && saved.sel) || 'OH', mode: store.get('drawMode', 'atoms'),
+    mol: defineMissing(start), tool: 'add', sel: (saved && saved.sel) || 'OH', mode: drawMode(),
     hist: [], redo: [], prev: null, pick: null, msg: '', lastFrag: (params && params.focusGroup) || null, cip: null
   };
   if (!FRAGMENTS[S.sel]) S.sel = 'OH';
 
   root.innerHTML = `<section class="page build">
     <div class="pg-head">
-      <div><p class="eyebrow"><span class="bar"></span>01 — BUILD</p><h1 class="title">BUILD<small>분자 조립</small></h1></div>
-      <p class="lead" style="margin:0;max-width:56ch">원자를 누르면 고른 조각이 붙습니다. 탄소를 계속 이어 붙이면 사슬이 길어지고, 고리 · 이중결합도 만들 수 있습니다. 파란 띠가 주사슬(주고리), 작은 숫자가 위치 번호입니다.</p>
+      <div><p class="eyebrow"><span class="bar"></span>01 — BUILD</p><h1 class="title">BUILD<small>구조식 편집기</small></h1></div>
+      <p class="lead" style="margin:0;max-width:56ch">원자를 선택하면 수소 하나가 지정한 치환기로 바뀝니다. 탄소를 이어 주사슬을 늘리고 고리 · 다중결합을 만들 수 있습니다. 파란 띠는 주사슬(모체), 작은 숫자는 위치번호입니다.</p>
     </div>
     <div class="bl-grid">
       <div class="bl-tools">
         <details class="blk blk-scaf panel ticks"${store.get('scafOpen', !saved) ? ' open' : ''}>
-          <summary class="lbl" id="lb-scaf">시작 분자 · 유명한 분자</summary>
+          <summary class="lbl" id="lb-scaf">기본 골격 · 대표 화합물</summary>
           <div class="scafs" role="group" aria-labelledby="lb-scaf">${BASES.map(t => `<button class="scaf" type="button" data-t="${t.id}"><span class="hx">${templateIcon(t.id)}</span>${t.ko}</button>`).join('')}</div>
-          <details class="famous"><summary>유명한 분자 ${FAMOUS.length}개</summary><div class="fam-list">${FAMOUS.map(t => `<button type="button" data-t="${t.id}"><b>${t.ko}</b><small>${t.note}</small></button>`).join('')}</div></details>
+          <details class="famous"><summary>대표 화합물 ${FAMOUS.length}종</summary><div class="fam-list">${FAMOUS.map(t => `<button type="button" data-t="${t.id}"><b>${t.ko}</b><small>${t.note}</small></button>`).join('')}</div></details>
         </details>
         <div class="blk blk-pal panel">
           <div class="toolbar" role="radiogroup" aria-label="도구">${TOOLS.map(([id, ko, tip]) => `<button class="tool" type="button" role="radio" data-tool="${id}" title="${tip}">${ko}</button>`).join('')}</div>
@@ -55,13 +55,13 @@ export function mount(root, app, params) {
           <p class="pal-info" aria-live="polite"></p>
         </div>
         <div class="blk blk-tools panel"><h2 class="lbl">편집</h2><div class="tools-row">
-          <button class="btn" type="button" id="b-undo">되돌리기</button><button class="btn" type="button" id="b-redo">다시</button>
-          <button class="btn" type="button" id="b-tidy">정리</button><button class="btn" type="button" id="b-rand">무작위</button>
+          <button class="btn" type="button" id="b-undo">실행 취소</button><button class="btn" type="button" id="b-redo">다시 실행</button>
+          <button class="btn" type="button" id="b-tidy">구조 정리</button><button class="btn" type="button" id="b-rand">무작위 생성</button>
           <button class="btn" type="button" id="b-3d">3D 보기</button><button class="btn solid" type="button" id="b-react">반응 예측 →</button></div></div>
       </div>
       <div class="stage panel ticks">
         <div class="stage-top"><p class="lbl">구조식</p>
-          <div class="seg small" role="group" aria-label="그림 방식"><button type="button" data-mode="atoms">원자 표시</button><button type="button" data-mode="skeletal">골격</button></div>
+          <div class="seg small" role="group" aria-label="구조식 표기"><button type="button" data-mode="skeletal">골격 구조식</button><button type="button" data-mode="atoms">축약 구조식</button></div>
           <span class="stage-count"></span></div>
         <div class="svgwrap"></div>
         <div class="stage-foot"></div>
@@ -70,9 +70,9 @@ export function mount(root, app, params) {
     </div>
     <div class="focus-bar" hidden><p></p>
       <div class="fb-tools"><button class="btn" type="button" id="z-out" aria-label="축소">−</button><button class="btn" type="button" id="z-in" aria-label="확대">+</button>
-      <button class="btn" type="button" id="z-reset">처음 모양</button><button class="btn" type="button" id="z-h" aria-pressed="true">H 보이기</button>
-      <button class="btn solid" type="button" id="b-back">구조식으로</button></div>
-      <small>끌어서 돌리기 · 휠/두 손가락으로 확대 · 두 번 눌러 처음 모양 · 길게 누르면 분해도</small></div>
+      <button class="btn" type="button" id="z-reset">시점 초기화</button><button class="btn" type="button" id="z-h" aria-pressed="true">수소 표시</button>
+      <button class="btn solid" type="button" id="b-back">구조식으로 돌아가기</button></div>
+      <small>드래그: 회전 · 휠/두 손가락: 확대 · 더블클릭: 초기화 · 길게 누르기: 분해도</small></div>
   </section>`;
   const q = s => root.querySelector(s);
 
@@ -96,17 +96,19 @@ export function mount(root, app, params) {
     save(); render(true);
   }
   let cur = null;
+  /* 접미사 작용기가 없는 헤테로 원자 화합물의 분류 */
+  const hetero = m => [m.atoms.some(a => ['F', 'Cl', 'Br', 'I'].includes(a.el)) && '할로젠화물', m.atoms.some(a => a.el === 'N' && a.q === 1) && '나이트로 화합물', m.atoms.some(a => a.el === 'O' && !a.q) && m.atoms.some((a, i) => a.el === 'O' && m.nb[i].length === 2) && '에터'].filter(Boolean).join(' · ') || '치환 탄화수소';
   function render(changed) {
     cur = entry(S.mol);
     paintTools();
     const m = cur.mol, r = cur.res;
     const nC = m.atoms.filter(a => a.el === 'C').length;
-    q('.stage-count').textContent = `원자 ${m.atoms.length} · 탄소 ${nC}`;
+    q('.stage-count').textContent = `중원자 ${m.atoms.length} · 탄소 ${nC}`;
     const hasC = c => r && ((r.rs && r.rs.has(c)) || (r.pseudo && r.pseudo.has(c)));
     if (!hasC(S.cip)) S.cip = r && r.rs && r.rs.size && S.tool === 'rs' ? r.rs.keys().next().value : null;
     q('.svgwrap').innerHTML = drawMolecule(m, r, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick, cip: S.cip });
-    const cls = r ? (r.P ? CLASS[r.P].ko : r.enes.length || r.ynes.length ? (r.ynes.length ? '알카인' : '알켄') : r.kind === 'benzene' || r.kind === 'biphenyl' ? '방향족 탄화수소' : m.atoms.some(a => a.el !== 'C') ? '치환 탄화수소' : r.kind === 'ring' ? '사이클로알케인' : '알케인') : '—';
-    q('.stage-foot').innerHTML = `<span><em>분자식</em>${formulaHTML(cur.f)}</span><span><em>몰질량</em>${cur.f.mass.toFixed(2)} g/mol</span><span><em>분류</em>${cls}</span><span><em>불포화도</em>${unsaturation(m)}</span><span class="smi"><em>SMILES</em>${esc(toSmiles(m))}</span>`;
+    const cls = r ? (r.P ? CLASS[r.P].ko : r.enes.length || r.ynes.length ? (r.ynes.length ? '알카인' : '알켄') : r.kind === 'benzene' || r.kind === 'biphenyl' ? '방향족 화합물' : m.atoms.some(a => a.el !== 'C') ? hetero(m) : r.kind === 'ring' ? '사이클로알케인' : '알케인') : '—';
+    q('.stage-foot').innerHTML = `<span><em>분자식</em>${formulaHTML(cur.f)}</span><span><em>몰질량</em>${cur.f.mass.toFixed(2)} g/mol</span><span><em>화합물군</em>${cls}</span><span><em>불포화도</em>${unsaturation(m)}</span><span class="smi"><em>SMILES</em>${esc(toSmiles(m))}</span>`;
     renderResult();
     if (changed !== false && r) app.setMol(cur, { instant: changed === 'first' });
     if (document.body.classList.contains('focus3d') && r) q('.focus-bar p').textContent = getLang() === 'ko' ? r.nameKo : r.nameEn;
@@ -115,7 +117,7 @@ export function mount(root, app, params) {
   function renderResult() {
     const r = cur.res, ko = getLang() === 'ko';
     if (!r) {
-      q('.result').innerHTML = `<div class="nm panel ticks"><p class="lbl">IUPAC 이름</p><p class="name-main muted">이름을 짓지 못했습니다</p><p class="note warn">${esc(cur.err || '')}</p><p class="hint">되돌리기로 한 단계 전으로 돌아가 보세요.</p></div>`;
+      q('.result').innerHTML = `<div class="nm panel ticks"><p class="lbl">IUPAC 이름</p><p class="name-main muted">명명할 수 없는 구조입니다</p><p class="note warn">${esc(cur.err || '')}</p><p class="hint">‘실행 취소’로 이전 구조로 돌아갈 수 있습니다.</p></div>`;
       return;
     }
     const main = ko ? r.ko : r.en, subName = ko ? r.nameEn : r.nameKo;
@@ -133,15 +135,15 @@ export function mount(root, app, params) {
         <p class="name-main" aria-live="polite">${tokensHTML(main)}</p>
         <p class="name-sub">${esc(subName)}</p>
         ${cm ? `<p class="name-common">관용명 <b>${esc(ko ? cm.ko : cm.en)}</b> · ${esc(ko ? cm.en : cm.ko)}${cm.note ? ` — ${esc(cm.note)}` : ''}</p>` : ''}
-        <p class="legend" aria-hidden="true"><span class="l-loc">위치 번호</span><span class="l-pre">접두사</span><span class="l-par">모체(어근)</span><span class="l-une">불포화</span><span class="l-suf">접미사</span>${r.stereo ? '<span class="l-ste">입체</span>' : ''}</p>
+        <p class="legend" aria-hidden="true"><span class="l-loc">위치번호</span><span class="l-pre">접두사</span><span class="l-par">모체(어근)</span><span class="l-une">불포화 어미</span><span class="l-suf">접미사</span>${r.stereo ? '<span class="l-ste">입체 표시</span>' : ''}</p>
       </div>
       ${warns.length ? `<div class="notes">${warns.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` : ''}
       ${tabsHTML('build', [
-        d.length && { id: 'diff', label: '바뀐 점', n: d.length, html: `<div class="changes"><p class="from">${esc(S.prev.res.nameEn)} → ${esc(r.nameEn)}</p><ul>${d.map(x => `<li>${x}</li>`).join('')}</ul></div>` },
-        { id: 'steps', label: '이름 풀이', html: `<div class="panel"><ol class="steps">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol></div>` },
-        rsHTML && { id: 'stereo', label: '입체', n: nSt, html: rsHTML },
-        infos.length && { id: 'notes', label: '참고', n: infos.length, html: `<div class="notes">${infos.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` },
-        { id: 'cmp', label: '비교', html: `<div class="cmp-slot"><p class="hint">목록을 만드는 중…</p></div>` }
+        d.length && { id: 'diff', label: '명명 변화', n: d.length, html: `<div class="changes"><p class="from">${esc(S.prev.res.nameEn)} → ${esc(r.nameEn)}</p><ul>${d.map(x => `<li>${x}</li>`).join('')}</ul></div>` },
+        { id: 'steps', label: '명명 과정', html: `<div class="panel"><ol class="steps">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol></div>` },
+        rsHTML && { id: 'stereo', label: '입체화학', n: nSt, html: rsHTML },
+        infos.length && { id: 'notes', label: '참고 사항', n: infos.length, html: `<div class="notes">${infos.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` },
+        { id: 'cmp', label: '비교', html: `<div class="cmp-slot"><p class="hint">계산 중…</p></div>` }
       ], 'steps')}`;
     root.querySelectorAll('.rs-tabs [data-cip]').forEach(bt => bt.addEventListener('click', () => { S.cip = +bt.dataset.cip; renderSvgOnly(); renderResult(true); }));
     const mb = q('#b-mirror'); if (mb) mb.addEventListener('click', () => commit(mirror(S.mol)));
@@ -164,9 +166,9 @@ export function mount(root, app, params) {
       const cmpB = S.tool === 'add' && cur.mol.atoms.length <= 40 ? compareSites(S.sel) : [];
       const cmpA = compareBases(frag);
       const slot = q('.cmp-slot'); if (!slot) return;
-      slot.innerHTML = (cmpB.length ? `<div class="cmp panel"><p class="lbl">원자마다 ${LBL(FRAGMENTS[S.sel].label)} 붙여 보기</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : '')
-        + (cmpA.length ? `<div class="cmp panel"><p class="lbl">${LBL(FRAGMENTS[frag].label)} 하나를 여러 뼈대에 붙이면</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : '')
-        || '<p class="hint">비교할 것이 없습니다. ‘붙이기’ 도구로 조각을 고르면 원자마다 붙인 결과를 보여 줍니다.</p>';
+      slot.innerHTML = (cmpB.length ? `<div class="cmp panel"><p class="lbl">위치별 ${LBL(FRAGMENTS[S.sel].label)} 치환체</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : '')
+        + (cmpA.length ? `<div class="cmp panel"><p class="lbl">기본 골격별 ${LBL(FRAGMENTS[frag].label)} 치환체</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : '')
+        || '<p class="hint">비교할 구조가 없습니다. ‘치환’ 도구에서 치환기를 선택하면 위치별 치환체를 보여 줍니다.</p>';
       slot.querySelectorAll('.cmp-list button').forEach((bt, i) => bt.addEventListener('click', () => {
         const x = rowsCache[i];
         commit(x.mol, x.frag);
@@ -227,10 +229,10 @@ export function mount(root, app, params) {
       else if (S.tool === 'erase') r = removeBranch(S.mol, i, 0);
       else if (S.tool === 'rs') {
         r = flipCenter(S.mol, i);
-        if (r.error) { S.msg = r.error + (cur.res && cur.res.centers.length ? '' : ' — 지금 분자에는 입체중심이 없습니다. 예: 뷰테인의 2번 탄소에 OH 를 붙여 보세요'); paintTools(); return; }
+        if (r.error) { S.msg = r.error + (cur.res && cur.res.centers.length ? '' : ' — 현재 구조에는 입체중심이 없습니다 (예: 뷰테인의 C2 에 OH 를 도입)'); paintTools(); return; }
         S.cip = i; commit(r.mol); return;
       }
-      else { S.msg = S.tool === 'bond' ? '결합(원자 사이의 선)을 눌러 주세요' : '이중결합을 눌러 주세요'; paintTools(); return; }
+      else { S.msg = S.tool === 'bond' ? '결합을 선택하세요' : '이중결합을 선택하세요'; paintTools(); return; }
       if (r.error) { S.msg = r.error; paintTools(); return; }
       S.pick = S.tool === 'add' ? i : null;
       commit(r.mol, S.tool === 'add' ? S.sel : null);
@@ -260,7 +262,7 @@ export function mount(root, app, params) {
     const b = e.target.closest('[data-g]'); if (!b) return;
     S.sel = b.dataset.g; S.tool = 'add'; S.msg = ''; save(); paintTools(); renderResult();
   });
-  root.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('drawMode', S.mode); paintTools(); renderSvgOnly(); }));
+  root.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; setDrawMode(S.mode); paintTools(); renderSvgOnly(); }));
   function renderSvgOnly() { q('.svgwrap').innerHTML = drawMolecule(cur.mol, cur.res, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick, cip: S.cip }); }
   q('#b-undo').addEventListener('click', () => { const h = S.hist.pop(); if (!h) return; S.redo.push(S.mol); S.prev = cur; S.mol = h; S.pick = null; save(); render(true); });
   q('#b-redo').addEventListener('click', () => { const h = S.redo.pop(); if (!h) return; S.hist.push(S.mol); S.prev = cur; S.mol = h; S.pick = null; save(); render(true); });
@@ -303,6 +305,6 @@ export function mount(root, app, params) {
   render('first');
   return {
     unmount() { clearTimeout(cmpTimer); offLang(); document.removeEventListener('keydown', onKey); app.focus3d(false); if (app.scene) { app.scene.setLite(false, false); app.scene.setFocus(false); app.scene.setShowH(true); } },
-    report: () => ({ '분자 SMILES': toSmiles(S.mol), '이름': cur && cur.res ? cur.res.nameEn : cur && cur.err ? '(이름 못 지음) ' + cur.err : '', '도구': S.tool === 'add' ? '붙이기 ' + S.sel : S.tool })
+    report: () => ({ '분자 SMILES': toSmiles(S.mol), '이름': cur && cur.res ? cur.res.nameEn : cur && cur.err ? '(명명 불가) ' + cur.err : '', '도구': S.tool === 'add' ? '치환 ' + S.sel : S.tool })
   };
 }

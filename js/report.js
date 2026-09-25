@@ -43,7 +43,7 @@ export function initReport({ version, context }) {
     dlg.setAttribute('aria-labelledby', 'bug-t');
     dlg.innerHTML = `<form method="dialog" class="bug-form">
       <div class="bug-head"><div><p class="lbl">BUG REPORT</p><h2 id="bug-t">버그 제보함</h2></div><button class="bug-x" value="close" aria-label="닫기">×</button></div>
-      <p class="bug-lead">틀린 이름, 이상한 반응 결과, 깨진 화면을 알려 주세요. 지금 보고 있는 분자와 화면 정보가 함께 붙어서 그대로 다시 만들어 볼 수 있습니다.</p>
+      <p class="bug-lead">잘못된 이름, 반응 결과의 오류, 화면 문제를 알려 주세요. 현재 구조와 화면 정보가 함께 전송되어 같은 상황을 재현할 수 있습니다.</p>
       <fieldset class="bug-kinds"><legend class="lbl">어떤 문제인가요</legend>${KINDS.map(([k, t]) => `<label><input type="radio" name="bug-kind" value="${k}"><span>${t}</span></label>`).join('')}</fieldset>
       <label class="lbl" for="bug-body">무엇이 이상한가요</label>
       <textarea id="bug-body" rows="5" maxlength="2000" placeholder="예: 사이클로헥산올에 CH₃ 를 붙였더니 이름이 ○○ 로 나오는데 △△ 가 맞는 것 같아요"></textarea>

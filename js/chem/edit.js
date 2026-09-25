@@ -6,32 +6,32 @@ import { checkSupported } from './name.js';
 
 /* 붙일 조각: 첫 원자가 붙는 자리. order 2 는 수소 둘을 바꿔 이중결합으로 (=O) */
 export const FRAGMENTS = {
-  CH3: { smi: 'C', label: 'CH3', ko: '메틸 (탄소 하나 늘리기)', group: 'c' },
-  C2H5: { smi: 'CC', label: 'C2H5', ko: '에틸', group: 'c' },
-  vinyl: { smi: 'C=C', label: 'CH=CH2', ko: '에텐일 (바이닐)', group: 'c' },
-  ethynyl: { smi: 'C#C', label: 'C≡CH', ko: '에타인일', group: 'c' },
-  phenyl: { smi: 'c1ccccc1', label: 'C6H5', ko: '페닐 (벤젠 고리)', group: 'c' },
-  cyclohexyl: { smi: 'C1CCCCC1', label: 'C6H11', ko: '사이클로헥실', group: 'c' },
-  cyclopropyl: { smi: 'C1CC1', label: 'C3H5', ko: '사이클로프로필', group: 'c' },
-  OH: { smi: 'O', label: 'OH', ko: '하이드록시 → 알코올', group: 'o' },
-  oxo: { smi: 'O', order: 2, label: '=O', ko: '카보닐 (H 둘 대신 =O)', group: 'o' },
-  OCH3: { smi: 'OC', label: 'OCH3', ko: '메톡시 → 에터', group: 'o' },
-  OAc: { smi: 'OC(C)=O', label: 'OCOCH3', ko: '아세틸옥시 → 에스터', group: 'o' },
-  NH2: { smi: 'N', label: 'NH2', ko: '아미노 → 아민', group: 'o' },
-  NO2: { smi: '[N+](=O)[O-]', label: 'NO2', ko: '나이트로', group: 'o' },
-  CN: { smi: 'C#N', label: 'CN', ko: '사이아노 → 나이트릴', group: 'y' },
-  CHO: { smi: 'C=O', label: 'CHO', ko: '폼일 → 알데하이드', group: 'y' },
-  COCH3: { smi: 'C(C)=O', label: 'COCH3', ko: '아세틸 → 케톤', group: 'y' },
-  COOH: { smi: 'C(=O)O', label: 'COOH', ko: '카복시 → 카복실산', group: 'y' },
-  COOCH3: { smi: 'C(=O)OC', label: 'COOCH3', ko: '메톡시카보닐 → 에스터', group: 'y' },
-  COCl: { smi: 'C(=O)Cl', label: 'COCl', ko: '염화 아실 → 산 할로젠화물', group: 'y' },
-  CONH2: { smi: 'C(N)=O', label: 'CONH2', ko: '카바모일 → 아마이드', group: 'y' },
+  CH3: { smi: 'C', label: 'CH3', ko: '메틸기', group: 'c' },
+  C2H5: { smi: 'CC', label: 'C2H5', ko: '에틸기', group: 'c' },
+  vinyl: { smi: 'C=C', label: 'CH=CH2', ko: '에텐일기 (바이닐기)', group: 'c' },
+  ethynyl: { smi: 'C#C', label: 'C≡CH', ko: '에타인일기', group: 'c' },
+  phenyl: { smi: 'c1ccccc1', label: 'C6H5', ko: '페닐기', group: 'c' },
+  cyclohexyl: { smi: 'C1CCCCC1', label: 'C6H11', ko: '사이클로헥실기', group: 'c' },
+  cyclopropyl: { smi: 'C1CC1', label: 'C3H5', ko: '사이클로프로필기', group: 'c' },
+  OH: { smi: 'O', label: 'OH', ko: '하이드록시기 (알코올)', group: 'o' },
+  oxo: { smi: 'O', order: 2, label: '=O', ko: '옥소기 (=O, 수소 두 개를 치환)', group: 'o' },
+  OCH3: { smi: 'OC', label: 'OCH3', ko: '메톡시기 (에터)', group: 'o' },
+  OAc: { smi: 'OC(C)=O', label: 'OCOCH3', ko: '아세틸옥시기 (에스터)', group: 'o' },
+  NH2: { smi: 'N', label: 'NH2', ko: '아미노기 (아민)', group: 'o' },
+  NO2: { smi: '[N+](=O)[O-]', label: 'NO2', ko: '나이트로기', group: 'o' },
+  CN: { smi: 'C#N', label: 'CN', ko: '사이아노기 (나이트릴)', group: 'y' },
+  CHO: { smi: 'C=O', label: 'CHO', ko: '폼일기 (알데하이드)', group: 'y' },
+  COCH3: { smi: 'C(C)=O', label: 'COCH3', ko: '아세틸기 (케톤)', group: 'y' },
+  COOH: { smi: 'C(=O)O', label: 'COOH', ko: '카복시기 (카복실산)', group: 'y' },
+  COOCH3: { smi: 'C(=O)OC', label: 'COOCH3', ko: '메톡시카보닐기 (에스터)', group: 'y' },
+  COCl: { smi: 'C(=O)Cl', label: 'COCl', ko: '클로로카보닐기 (산 할로젠화물)', group: 'y' },
+  CONH2: { smi: 'C(N)=O', label: 'CONH2', ko: '카바모일기 (아마이드)', group: 'y' },
   F: { smi: 'F', label: 'F', ko: '플루오로', group: 'x' },
   Cl: { smi: 'Cl', label: 'Cl', ko: '클로로', group: 'x' },
   Br: { smi: 'Br', label: 'Br', ko: '브로모', group: 'x' },
   I: { smi: 'I', label: 'I', ko: '아이오도', group: 'x' }
 };
-export const FRAG_GROUPS = [['c', '탄소 뼈대'], ['o', '산소 · 질소'], ['y', '카보닐 · 사이아노'], ['x', '할로젠']];
+export const FRAG_GROUPS = [['c', '탄화수소기'], ['o', '산소 · 질소 작용기'], ['y', '카보닐 · 나이트릴'], ['x', '할로젠']];
 
 /* 시작 분자 (뼈대 · 유명한 분자) */
 export const TEMPLATES = [
@@ -47,23 +47,23 @@ export const TEMPLATES = [
   { id: 'cyclohexene', smi: 'C1=CCCCC1', ko: '사이클로헥센', kind: 'base' },
   { id: 'cyclopentane', smi: 'C1CCCC1', ko: '사이클로펜테인', kind: 'base' },
   { id: 'benzene', smi: 'c1ccccc1', ko: '벤젠', kind: 'base' },
-  { id: 'ibuprofen', smi: 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', ko: '이부프로펜', kind: 'famous', note: '진통 · 소염제 (S 가 약효)' },
-  { id: 'aspirin', smi: 'CC(=O)Oc1ccccc1C(=O)O', ko: '아스피린', kind: 'famous', note: '해열 · 진통제' },
-  { id: 'paracetamol', smi: 'CC(=O)Nc1ccc(O)cc1', ko: '아세트아미노펜', kind: 'famous', note: '해열 진통제 (타이레놀)' },
-  { id: 'vanillin', smi: 'COc1cc(C=O)ccc1O', ko: '바닐린', kind: 'famous', note: '바닐라 향' },
-  { id: 'capsaicin', smi: 'COc1cc(CNC(=O)CCCC/C=C/C(C)C)ccc1O', ko: '캡사이신', kind: 'famous', note: '고추의 매운맛' },
-  { id: 'geraniol', smi: 'CC(C)=CCC/C(C)=C/CO', ko: '제라니올', kind: 'famous', note: '장미 향' },
-  { id: 'limonene', smi: 'CC1=CC[C@@H](CC1)C(=C)C', ko: '리모넨', kind: 'famous', note: '귤 껍질 향 (R) · S 는 송진 향' },
-  { id: 'menthol', smi: 'CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', ko: '멘톨', kind: 'famous', note: '박하 (1R,2S,5R)' },
-  { id: 'alanine', smi: 'C[C@H](N)C(=O)O', ko: 'L-알라닌', kind: 'famous', note: '아미노산 (S)' },
-  { id: 'lactic', smi: 'C[C@H](O)C(=O)O', ko: 'L-젖산', kind: 'famous', note: '근육 · 요구르트 (S)' },
-  { id: 'carvone', smi: 'CC1=CC[C@H](CC1=O)C(=C)C', ko: '카본', kind: 'famous', note: '(R) 스피어민트 향 · 거울상 (S) 는 캐러웨이 향' },
-  { id: 'dopamine', smi: 'NCCc1ccc(O)c(O)c1', ko: '도파민', kind: 'famous', note: '신경전달물질' },
-  { id: 'benzocaine', smi: 'CCOC(=O)c1ccc(N)cc1', ko: '벤조카인', kind: 'famous', note: '국소 마취제' },
-  { id: 'ethylacetate', smi: 'CCOC(C)=O', ko: '아세트산 에틸', kind: 'famous', note: '매니큐어 제거제 향' },
-  { id: 'citric', smi: 'OC(=O)CC(O)(CC(=O)O)C(=O)O', ko: '시트르산', kind: 'famous', note: '레몬의 신맛' },
-  { id: 'tnt', smi: 'Cc1c(cc(cc1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]', ko: 'TNT', kind: 'famous', note: '폭약' },
-  { id: 'isoamylacetate', smi: 'CC(C)CCOC(C)=O', ko: '아세트산 아이소아밀', kind: 'famous', note: '바나나 향' }
+  { id: 'ibuprofen', smi: 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', ko: '이부프로펜', kind: 'famous', note: '비스테로이드 소염진통제 · (S) 가 활성체' },
+  { id: 'aspirin', smi: 'CC(=O)Oc1ccccc1C(=O)O', ko: '아스피린', kind: 'famous', note: '해열진통제 · 아세틸살리실산' },
+  { id: 'paracetamol', smi: 'CC(=O)Nc1ccc(O)cc1', ko: '아세트아미노펜', kind: 'famous', note: '해열진통제 · 파라세타몰' },
+  { id: 'vanillin', smi: 'COc1cc(C=O)ccc1O', ko: '바닐린', kind: 'famous', note: '바닐라 향 성분' },
+  { id: 'capsaicin', smi: 'COc1cc(CNC(=O)CCCC/C=C/C(C)C)ccc1O', ko: '캡사이신', kind: 'famous', note: '고추의 매운맛 성분' },
+  { id: 'geraniol', smi: 'CC(C)=CCC/C(C)=C/CO', ko: '제라니올', kind: 'famous', note: '장미 향 모노테르펜' },
+  { id: 'limonene', smi: 'CC1=CC[C@@H](CC1)C(=C)C', ko: '리모넨', kind: 'famous', note: '감귤 향 모노테르펜 · (R) 체' },
+  { id: 'menthol', smi: 'CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', ko: '멘톨', kind: 'famous', note: '박하 성분 · (1R,2S,5R)' },
+  { id: 'alanine', smi: 'C[C@H](N)C(=O)O', ko: 'L-알라닌', kind: 'famous', note: 'α-아미노산 · (S) 배열' },
+  { id: 'lactic', smi: 'C[C@H](O)C(=O)O', ko: 'L-젖산', kind: 'famous', note: '젖산 발효 산물 · (S) 배열' },
+  { id: 'carvone', smi: 'CC1=CC[C@H](CC1=O)C(=C)C', ko: '카본', kind: 'famous', note: '(R) 스피어민트 향 · (S) 캐러웨이 향' },
+  { id: 'dopamine', smi: 'NCCc1ccc(O)c(O)c1', ko: '도파민', kind: 'famous', note: '카테콜아민 신경전달물질' },
+  { id: 'benzocaine', smi: 'CCOC(=O)c1ccc(N)cc1', ko: '벤조카인', kind: 'famous', note: '국소 마취제 · 에스터' },
+  { id: 'ethylacetate', smi: 'CCOC(C)=O', ko: '아세트산 에틸', kind: 'famous', note: '용매 · 에스터' },
+  { id: 'citric', smi: 'OC(=O)CC(O)(CC(=O)O)C(=O)O', ko: '시트르산', kind: 'famous', note: '시트르산 회로의 중간체' },
+  { id: 'tnt', smi: 'Cc1c(cc(cc1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]', ko: 'TNT', kind: 'famous', note: '2,4,6-트라이나이트로톨루엔 · 폭약' },
+  { id: 'isoamylacetate', smi: 'CC(C)CCOC(C)=O', ko: '아세트산 아이소아밀', kind: 'famous', note: '바나나 향 에스터' }
 ];
 
 export function fromSmiles(smi) { const m = parseSmiles(smi); layout(m, { root: 0 }); return m; }
@@ -74,11 +74,11 @@ export function attach(mol, i, fragId) {
   const order = F.order || 1;
   const a = mol.atoms[i];
   if (!a) return { error: '원자를 찾지 못했습니다' };
-  if (a.h < order) return { error: order === 2 ? '=O 를 붙이려면 이 원자에 H 가 둘 있어야 합니다' : '이 원자에는 붙일 H 가 없습니다' };
-  if (a.q) return { error: '전하를 띤 원자에는 붙이지 않습니다' };
+  if (a.h < order) return { error: order === 2 ? '=O 를 도입하려면 이 원자에 수소가 두 개 있어야 합니다' : '이 원자에는 치환할 수소가 없습니다' };
+  if (a.q) return { error: '전하를 띤 원자에는 치환기를 도입하지 않습니다' };
   /* O · N 의 H 자리에는 탄소 조각만 (O–O, O–Cl, N–N 같은 결합은 만들지 않는다) */
   const firstC = F.smi[0] === 'C' || F.smi[0] === 'c';
-  if (a.el !== 'C' && (!firstC || order !== 1)) return { error: a.el + ' 의 H 자리에는 탄소로 시작하는 조각(CH₃, 페닐, 아세틸 …)만 붙일 수 있습니다' };
+  if (a.el !== 'C' && (!firstC || order !== 1)) return { error: a.el + ' 의 수소는 탄소로 결합하는 치환기(CH₃, 페닐, 아세틸 등)로만 치환할 수 있습니다' };
   const stereo = stereoFromCoords(mol);
   const m = clone(mol);
   const frag = parseSmiles(F.smi);
@@ -101,12 +101,12 @@ export function attach(mol, i, fragId) {
 /* 결합 k 의 차수를 한 단계 올린다 (1 → 2 → 3 → 1). 원자가가 허락하지 않으면 건너뛴다 */
 export function cycleBond(mol, k) {
   const b = mol.bonds[k];
-  if (b.arom) return { error: '벤젠 고리의 결합은 바꾸지 않습니다' };
-  if (mol.atoms[b.a].el !== 'C' || mol.atoms[b.b].el !== 'C') return { error: '탄소–탄소 결합만 이중 · 삼중으로 바꿀 수 있습니다 (C=O 는 =O 조각으로)' };
+  if (b.arom) return { error: '방향족 고리의 결합 차수는 바꿀 수 없습니다' };
+  if (mol.atoms[b.a].el !== 'C' || mol.atoms[b.b].el !== 'C') return { error: '결합 차수는 C–C 결합에서만 바꿀 수 있습니다 (C=O 는 =O 치환기로 도입)' };
   const R = rings(mol);
   const inRing = R.same(b.a, b.b);
   const A = mol.atoms[b.a], B = mol.atoms[b.b];
-  if (A.q || B.q) return { error: '전하를 띤 원자의 결합은 바꾸지 않습니다' };
+  if (A.q || B.q) return { error: '전하를 띤 원자의 결합 차수는 바꿀 수 없습니다' };
   const stereo = stereoFromCoords(mol);
   for (const next of [b.o + 1, b.o + 2, 1]) {
     const o = next > 3 ? next - 3 : next;
@@ -126,12 +126,12 @@ export function cycleBond(mol, k) {
     layout(m, { root: 0, stereo: stereo.filter(s => !(s.a === b.a && s.b === b.b) && !(s.a === b.b && s.b === b.a)), orient: false });
     return { mol: m };
   }
-  return { error: '이 결합은 더 바꿀 수 없습니다 (원자가가 꽉 참)' };
+  return { error: '원자가가 채워져 결합 차수를 더 높일 수 없습니다' };
 }
 
 /* 원자 i 와 그 너머 가지를 지운다 (뿌리 쪽은 남긴다). root 는 지우지 않는다 */
 export function removeBranch(mol, i, root = 0) {
-  if (i === root) return { error: '처음 뼈대의 첫 원자는 지울 수 없습니다. 뼈대를 새로 고르세요' };
+  if (i === root) return { error: '기본 골격의 첫 원자는 삭제할 수 없습니다. 다른 기본 골격을 선택하세요' };
   const R = rings(mol);
   /* 뿌리까지의 길에서 i 바로 앞 원자 */
   const par = new Map([[root, -1]]), q = [root];
@@ -141,11 +141,11 @@ export function removeBranch(mol, i, root = 0) {
   if (R.of[i] >= 0 && R.of[p] === R.of[i]) {
     /* 고리 원자면 그 고리 전체와 딸린 가지를 지운다 (뿌리 고리는 안 됨) */
     const ring = R.list[R.of[i]];
-    if (ring.includes(root)) return { error: '처음 뼈대의 고리는 지울 수 없습니다' };
+    if (ring.includes(root)) return { error: '기본 골격의 고리는 삭제할 수 없습니다' };
     let entry = ring.find(a => ring.includes(par.get(a)) === false);
     dead = branch(mol, entry, par.get(entry));
   } else dead = branch(mol, i, p);
-  if (dead.has(root)) return { error: '이 원자는 지울 수 없습니다' };
+  if (dead.has(root)) return { error: '이 원자는 삭제할 수 없습니다' };
   const stereo = stereoFromCoords(mol);
   const m = clone(mol);
   const anchor = [...dead].map(d => mol.nb[d].filter(n => !dead.has(n.j))).flat();
@@ -164,7 +164,7 @@ export function flipEZ(mol, k) {
   if (b.o !== 2 || b.arom) return { error: '이중결합이 아닙니다' };
   const stereo = stereoFromCoords(mol);
   const s = stereo.find(x => (x.a === b.a && x.b === b.b) || (x.a === b.b && x.b === b.a));
-  if (!s) return { error: '이 이중결합은 한쪽 끝의 치환기가 같아 E/Z 가 없습니다' };
+  if (!s) return { error: '한쪽 끝의 두 치환기가 같아 E/Z 이성질이 없는 이중결합입니다' };
   const m = clone(mol);
   const st = stereo.map(x => x === s ? { ...x, rel: x.rel === 'cis' ? 'trans' : 'cis' } : x);
   layout(m, { root: 0, stereo: st, orient: false });

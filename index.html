@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>HEXA 유기화학</title>
-<meta name="description" content="원자를 눌러 분자를 조립하며 IUPAC 이름이 어떻게 바뀌는지 배우고, 스미스 · 브루스 유기화학의 반응 생성물과 입체(R/S · cis/trans)를 예측해 보는 유기화학 스튜디오.">
+<meta name="description" content="구조식을 편집하며 IUPAC 명명 규칙을 익히고, 스미스 · 브루스 유기화학의 반응 생성물과 입체화학(R/S · cis/trans · E/Z)을 예측하는 유기화학 학습 도구.">
 <meta name="theme-color" content="#03060f">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="HEXA 유기화학">
-<meta property="og:title" content="HEXA 유기화학 · 작용기와 이름">
-<meta property="og:description" content="작용기를 붙이면 이름이 어떻게 바뀔까? 벤젠 · 프로펜에 직접 붙여 보며 배우는 IUPAC 명명법.">
+<meta property="og:title" content="HEXA 유기화학 — 구조를 읽으면 반응이 보인다">
+<meta property="og:description" content="구조식 편집 · IUPAC 명명 · 반응 예측 · 입체화학을 한곳에서.">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:url" content="https://dhsrua555.github.io/organic-chem/">
 <meta property="og:image" content="https://dhsrua555.github.io/organic-chem/og-image.jpg">
@@ -28,7 +28,7 @@
 <div class="guides" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
 <header class="hud hud-top">
-  <a class="tag" href="#home"><span class="bar" aria-hidden="true"></span><span class="tag-en">ORGANIC CHEMISTRY</span><span class="tag-ko">여섯 꼭짓점에서 시작하는 유기화학</span></a>
+  <a class="tag" href="#home"><span class="bar" aria-hidden="true"></span><span class="tag-en">ORGANIC CHEMISTRY</span><span class="tag-ko">구조를 읽으면 반응이 보인다</span></a>
   <button id="menu-btn" class="menu-btn" type="button" aria-expanded="false" aria-controls="menu">
     <span class="mb-label" id="menu-label">MENU</span><span class="mb-lines" aria-hidden="true"><i></i><i></i><i></i></span>
   </button>
@@ -48,7 +48,7 @@
     <button id="motion" class="wave" type="button" aria-pressed="true" aria-label="배경 움직임 끄기">
       <svg viewBox="0 0 40 20" aria-hidden="true"><path d="M1 10h7l3-7 5 14 5-13 4 10 3-4h11"/></svg>
     </button>
-    <button id="bug-btn" class="bug-btn" type="button" aria-haspopup="dialog" title="이상한 점 알려 주기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2v17M4 3h11l-2.5 4L15 11H4"/></svg><span>제보</span></button>
+    <button id="bug-btn" class="bug-btn" type="button" aria-haspopup="dialog" title="오류 제보"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2v17M4 3h11l-2.5 4L15 11H4"/></svg><span>제보</span></button>
     <span class="ver">IUPAC 2013</span>
   </div>
 </footer>
@@ -56,11 +56,11 @@
 <nav id="menu" class="menu" aria-label="전체 메뉴" hidden>
   <div class="menu-blocks" aria-hidden="true"></div>
   <ol class="menu-list">
-    <li><a href="#build" data-n="01"><span class="mi-en">BUILD</span><span class="mi-ko">분자 조립</span></a></li>
+    <li><a href="#build" data-n="01"><span class="mi-en">BUILD</span><span class="mi-ko">구조식 편집기</span></a></li>
     <li><a href="#react" data-n="02"><span class="mi-en">REACTIONS</span><span class="mi-ko">반응 예측</span></a></li>
-    <li><a href="#groups" data-n="03"><span class="mi-en">FUNCTIONAL GROUPS</span><span class="mi-ko">작용기 도감</span></a></li>
-    <li><a href="#rules" data-n="04"><span class="mi-en">NOMENCLATURE</span><span class="mi-ko">명명법 다섯 단계</span></a></li>
-    <li><a href="#quiz" data-n="05"><span class="mi-en">QUIZ</span><span class="mi-ko">이름 · 반응 퀴즈</span></a></li>
+    <li><a href="#groups" data-n="03"><span class="mi-en">FUNCTIONAL GROUPS</span><span class="mi-ko">작용기와 우선순위</span></a></li>
+    <li><a href="#rules" data-n="04"><span class="mi-en">NOMENCLATURE</span><span class="mi-ko">IUPAC 명명법</span></a></li>
+    <li><a href="#quiz" data-n="05"><span class="mi-en">PRACTICE</span><span class="mi-ko">연습 문제</span></a></li>
   </ol>
   <a class="menu-log" href="https://github.com/dhsrua555/organic-chem/blob/main/CHANGELOG.md" target="_blank" rel="noopener">업데이트 기록 <span id="menu-ver"></span> ↗</a>
 </nav>
@@ -68,7 +68,7 @@
 <div id="loader" class="loader" role="status" aria-live="polite">
   <svg viewBox="0 0 120 120" aria-hidden="true"><path class="ld-hex" d="M60 10l43.3 25v50L60 110 16.7 85V35z"/><path class="ld-in" d="M60 26l29.4 17v34L60 94 30.6 77V43z"/></svg>
   <p class="ld-t">HEXA</p>
-  <p class="ld-s"><span id="ld-pct">0</span>% · 분자를 조립하는 중</p>
+  <p class="ld-s"><span id="ld-pct">0</span>% · 불러오는 중</p>
 </div>
 
 <noscript><p class="noscript">이 사이트는 자바스크립트가 필요합니다.</p></noscript>

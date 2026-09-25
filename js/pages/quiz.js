@@ -11,7 +11,7 @@ import { CLASS } from '../chem/name.js';
 import { GROUP_INFO } from '../data.js';
 import { centerHTML, groupLabel } from '../rsview.js';
 import { EXAMPLES } from './react.js';
-import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
+import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle, drawMode } from '../ui.js';
 
 const UNSTABLE = ['enol', 'enamine', 'ynol', 'ynamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
 const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'oxo', 'C2H5', 'vinyl', 'phenyl'];
@@ -20,53 +20,53 @@ const CHAINS = ['CC', 'CCC', 'CCCC', 'CCCCC', 'CCCCCC'];
 const RX_SUBS = ['CCC(C)Br', 'CC(C)(C)Br', 'CCCBr', 'CC(C)C(C)Br', 'BrCc1ccccc1', 'CC(O)CC', 'CCCO', 'CC(C)(C)O', 'OC1CCCCC1', 'CC=C', 'CC(C)=CC', 'C1=CCCCC1', 'CC(C)(C)C=C',
   'CCC#C', 'CC#CC', 'CCC=O', 'CC(=O)c1ccccc1', 'O=C1CCCCC1', 'CCOC(C)=O', 'CCC#N', 'CC(=O)O', 'CC(=O)Cl', 'c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', '[O-][N+](=O)c1ccccc1', 'CCC', 'CC(C)C', 'CC=O', 'C=CC=C', 'Brc1ccccc1',
   'CC1CO1', 'CC1(C)CO1', 'CC=CC(C)=O', 'CC(=O)CC', 'Nc1ccccc1', 'Clc1ccc(cc1)[N+](=O)[O-]', 'Cc1ccc(Cl)cc1', 'CC(C)=O'];
-const mode = () => store.get('drawMode', 'atoms');
+const mode = drawMode;
 const HALO = new Set(['F', 'Cl', 'Br', 'I']);
 const hasEther = m => m.atoms.some((a, i) => a.el === 'O' && m.nb[i].length === 2 && m.nb[i].every(n => n.o === 1 && m.atoms[n.j].el === 'C' && !m.nb[n.j].some(x => x.o === 2 && m.atoms[x.j].el === 'O')));
 const hasMulti = m => m.bonds.some(b => b.o >= 2 && !b.arom && m.atoms[b.a].el === 'C' && m.atoms[b.b].el === 'C');
 
 /* ── 주제 ─────────────────────────────── */
 const NAME_T = [
-  { id: 'mix', ko: '모두 섞어서', sub: '뼈대 12종 × 조각 26종' },
-  { id: 'alkane', ko: '사슬 · 곁가지', sub: '알케인, 메틸 · 에틸 곁가지', bases: ['CCCC', 'CCCCC', 'CCCCCC', 'CCC'], pool: ['CH3', 'CH3', 'CH3', 'C2H5'],
+  { id: 'mix', ko: '종합', sub: '기본 골격 12종 × 치환기 26종' },
+  { id: 'alkane', ko: '알케인 · 곁사슬', sub: '메틸 · 에틸 곁사슬', bases: ['CCCC', 'CCCCC', 'CCCCCC', 'CCC'], pool: ['CH3', 'CH3', 'CH3', 'C2H5'],
     want: e => e.res.kind === 'chain' && e.mol.atoms.every(a => a.el === 'C') && e.mol.bonds.every(b => b.o === 1) },
-  { id: 'unsat', ko: '이중 · 삼중결합', sub: '-ene · -yne 번호, E/Z', bases: ['C=CC', 'C=CCC', 'CC=CC', 'C=CCCC', 'C#CC', 'C#CCC', 'CC#CC', 'C=CC=C'], pool: ['CH3', 'CH3', 'CH3', 'C2H5', 'vinyl', 'ethynyl', 'Cl', 'Br', 'OH'],
+  { id: 'unsat', ko: '알켄 · 알카인', sub: '-ene · -yne 위치번호, E/Z', bases: ['C=CC', 'C=CCC', 'CC=CC', 'C=CCCC', 'C#CC', 'C#CCC', 'CC#CC', 'C=CC=C'], pool: ['CH3', 'CH3', 'CH3', 'C2H5', 'vinyl', 'ethynyl', 'Cl', 'Br', 'OH'],
     want: e => e.res.kind !== 'benzene' && hasMulti(e.mol) },
-  { id: 'halo', ko: '할로젠 · 나이트로', sub: '접두사로만 쓰는 치환기', bases: [...CHAINS, 'C1CCCCC1', 'c1ccccc1'], pool: ['F', 'Cl', 'Cl', 'Br', 'Br', 'I', 'NO2', 'NO2', 'CH3', 'CH3'],
+  { id: 'halo', ko: '할로젠 · 나이트로', sub: '접두사 전용 치환기', bases: [...CHAINS, 'C1CCCCC1', 'c1ccccc1'], pool: ['F', 'Cl', 'Cl', 'Br', 'Br', 'I', 'NO2', 'NO2', 'CH3', 'CH3'],
     want: e => !e.res.P && e.mol.atoms.some(a => HALO.has(a.el) || (a.el === 'N' && a.q === 1)) },
   { id: 'alcohol', ko: '알코올 · 에터 · 아민', sub: '-ol · -amine · 알콕시', bases: [...CHAINS, 'C1CCCCC1', 'C=CC'], pool: ['OH', 'OH', 'OH', 'NH2', 'NH2', 'OCH3', 'OCH3', 'CH3', 'CH3', 'Cl'],
     want: e => ['alcohol', 'amine'].includes(e.res.P) || (!e.res.P && hasEther(e.mol)) },
   { id: 'carbonyl', ko: '알데하이드 · 케톤', sub: '-al · -one · oxo · formyl', bases: [...CHAINS, 'C1CCCCC1', 'C=CC', 'c1ccccc1'], pool: ['CHO', 'CHO', 'oxo', 'oxo', 'COCH3', 'CH3', 'CH3', 'OH', 'Cl', 'C2H5'],
     want: e => ['aldehyde', 'ketone'].includes(e.res.P) },
-  { id: 'acid', ko: '카복실산 · 유도체', sub: '산 · 에스터 · 아마이드 · 나이트릴', bases: [...CHAINS, 'C1CCCCC1', 'C=CC', 'c1ccccc1'], pool: ['COOH', 'COOH', 'COOCH3', 'COOCH3', 'CONH2', 'CN', 'COCl', 'CH3', 'CH3', 'OH', 'Cl'],
+  { id: 'acid', ko: '카복실산과 유도체', sub: '산 · 에스터 · 아마이드 · 나이트릴', bases: [...CHAINS, 'C1CCCCC1', 'C=CC', 'c1ccccc1'], pool: ['COOH', 'COOH', 'COOCH3', 'COOCH3', 'CONH2', 'CN', 'COCl', 'CH3', 'CH3', 'OH', 'Cl'],
     want: e => ['acid', 'ester', 'amide', 'nitrile', 'acylhalide'].includes(e.res.P) },
-  { id: 'ring', ko: '고리', sub: '사이클로알케인 · 고리 번호', bases: ['C1CCCCC1', 'C1CCCC1', 'C1=CCCCC1', 'C1CC1', 'C1CCC1'], pool: ['CH3', 'CH3', 'C2H5', 'OH', 'Cl', 'Br', 'oxo', 'COOH', 'NH2', 'CHO'],
+  { id: 'ring', ko: '고리 화합물', sub: '사이클로알케인 · 고리 위치번호', bases: ['C1CCCCC1', 'C1CCCC1', 'C1=CCCCC1', 'C1CC1', 'C1CCC1'], pool: ['CH3', 'CH3', 'C2H5', 'OH', 'Cl', 'Br', 'oxo', 'COOH', 'NH2', 'CHO'],
     want: e => !['chain', 'benzene', 'biphenyl'].includes(e.res.kind) },
   { id: 'benzene', ko: '벤젠 유도체', sub: '페놀 · 아닐린 · 톨루엔 · o/m/p', bases: ['c1ccccc1'], pool: ['CH3', 'OH', 'NH2', 'Cl', 'Br', 'NO2', 'COOH', 'CHO', 'OCH3', 'COCH3', 'CN', 'C2H5'],
     want: e => e.res.kind === 'benzene' },
-  { id: 'multi', ko: '여러 작용기', sub: '누가 접미사가 되나 (우선순위)', min: 2, pool: ['COOH', 'COOCH3', 'CONH2', 'CN', 'CHO', 'oxo', 'COCH3', 'OH', 'OH', 'NH2', 'NH2', 'Cl', 'CH3'],
+  { id: 'multi', ko: '다작용기 화합물', sub: '작용기 우선순위와 접미사', min: 2, pool: ['COOH', 'COOCH3', 'CONH2', 'CN', 'CHO', 'oxo', 'COCH3', 'OH', 'OH', 'NH2', 'NH2', 'Cl', 'CH3'],
     want: e => e.res.P && [...(e.res.present || [])].filter(c => CLASS[c]).length >= 2 }
 ];
-const RX_T = [{ id: 'all', ko: '모두 섞어서', sub: '97가지 시약' }, ...CATS.map(c => ({ id: c.id, ko: c.ko, sub: c.sub }))];
+const RX_T = [{ id: 'all', ko: '종합', sub: '시약 97종' }, ...CATS.map(c => ({ id: c.id, ko: c.ko, sub: c.sub }))];
 const ST_T = [
-  { id: 'mix', ko: '모두 섞어서', sub: '아래 여섯 가지' },
-  { id: 'rs1', ko: 'R/S · 중심 하나', sub: '작은 분자' },
-  { id: 'rsN', ko: 'R/S · 큰 분자', sub: '여러 중심 중 하나' },
-  { id: 'cip', ko: 'CIP 순위', sub: '① ② ③ 고르기' },
-  { id: 'ct', ko: '고리 cis · trans', sub: '같은 면 · 반대 면' },
-  { id: 'ez', ko: '이중결합 E · Z', sub: '우선순위로 판정' },
-  { id: 'meso', ko: '메소 · 카이랄', sub: '거울상과 겹치나' }
+  { id: 'mix', ko: '종합', sub: '여섯 주제 혼합' },
+  { id: 'rs1', ko: 'R/S · 입체중심 1개', sub: '단순 화합물' },
+  { id: 'rsN', ko: 'R/S · 다중 입체중심', sub: '여러 중심 가운데 하나' },
+  { id: 'cip', ko: 'CIP 우선순위', sub: '① ② ③ 결정' },
+  { id: 'ct', ko: '고리 cis · trans', sub: '고리의 같은 면 · 반대 면' },
+  { id: 'ez', ko: 'E/Z 배치', sub: 'CIP 우선순위로 판정' },
+  { id: 'meso', ko: '메소 화합물', sub: '거울상과 포개어지는가' }
 ];
 const GR_T = [
-  { id: 'mix', ko: '모두 섞어서', sub: '아래 세 가지' },
-  { id: 'identify', ko: '작용기 알아보기', sub: '구조 → 작용기 이름' },
-  { id: 'principal', ko: '주 작용기 고르기', sub: '누가 접미사가 되나' },
+  { id: 'mix', ko: '종합', sub: '세 주제 혼합' },
+  { id: 'identify', ko: '작용기 식별', sub: '구조 → 작용기' },
+  { id: 'principal', ko: '주 작용기 결정', sub: '접미사로 표시되는 작용기' },
   { id: 'affix', ko: '접미사 · 접두사', sub: '-ol ↔ hydroxy-' }
 ];
 const AREAS = [
-  { id: 'name', ko: '이름 짓기', topics: NAME_T },
+  { id: 'name', ko: '명명', topics: NAME_T },
   { id: 'react', ko: '반응', topics: RX_T },
-  { id: 'stereo', ko: '입체', topics: ST_T },
+  { id: 'stereo', ko: '입체화학', topics: ST_T },
   { id: 'group', ko: '작용기', topics: GR_T }
 ];
 
@@ -241,9 +241,9 @@ function rsQ(level) {
   const { e, c, answer } = r;
   return {
     kind: 'rs', e, mol3d: e, answer, open: buildOpen(e),
-    prompt: '점선 원으로 표시한 탄소의 배열은? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.',
+    prompt: '표시한 입체중심의 절대 배열은? (굵은 쐐기: 지면 앞쪽 · 점선 쐐기: 지면 뒤쪽)',
     pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true, mark: c, rsLabels: done, cip: done ? c : null }),
-    opts: [{ key: 'R', label: 'R', sub: 'rectus · 시계 방향' }, { key: 'S', label: 'S', sub: 'sinister · 시계 반대 방향' }],
+    opts: [{ key: 'R', label: 'R', sub: 'rectus · 시계 방향' }, { key: 'S', label: 'S', sub: 'sinister · 반시계 방향' }],
     verdict: () => `${labC(e, c)}는 <b>${answer}</b> · ${esc(e.res.nameEn)}`,
     why: () => `<div class="rs-card panel">${centerHTML(e.mol, c, locOf(e))}</div>`
   };
@@ -261,10 +261,10 @@ function cipQ(level) {
     const k = pick([0, 0, 1, 2]);
     return {
       kind: 'cip', e, mol3d: e, answer: String(k), open: buildOpen(e),
-      prompt: `표시한 탄소에 붙은 네 치환기 중 CIP 순위 ${CIRC[k]}${k === 0 ? ' (가장 높은 것)' : ''}은?`,
+      prompt: `표시한 입체중심에서 CIP 우선순위 ${CIRC[k]}${k === 0 ? '(최고 순위)' : ''}에 해당하는 치환기는?`,
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true, mark: c, rsLabels: done, cip: done ? c : null }),
       opts: shuffle(labels.map((l, i) => ({ key: String(i), label: esc(l), sub: '' }))),
-      verdict: () => `${CIRC[k]} 은 <b>${esc(labels[k])}</b> · 순위 ${labels.map((l, i) => CIRC[i] + ' ' + esc(l)).join(' → ')}`,
+      verdict: () => `순위 ${CIRC[k]}: <b>${esc(labels[k])}</b> · 전체 ${labels.map((l, i) => CIRC[i] + ' ' + esc(l)).join(' → ')}`,
       why: () => `<div class="rs-card panel">${centerHTML(e.mol, c, locOf(e))}</div>`
     };
   }
@@ -280,11 +280,11 @@ function ctQ() {
     const ans = ct.rel;
     return {
       kind: 'ct', e, mol3d: e, answer: ans, open: buildOpen(e),
-      prompt: '고리 위 두 치환기는 cis 일까 trans 일까? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.',
+      prompt: '고리 위 두 치환기의 상대 배치는? (굵은 쐐기: 지면 앞쪽 · 점선 쐐기: 지면 뒤쪽)',
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true, rsLabels: done, ctLabels: done }),
       opts: [{ key: 'cis', label: 'cis', sub: '두 치환기가 고리의 같은 면' }, { key: 'trans', label: 'trans', sub: '두 치환기가 고리의 반대 면' }],
       verdict: () => `<b>${ans}</b> · ${esc(e.res.relName ? e.res.relName.en : e.res.nameEn)}`,
-      why: () => `<div class="rs-card panel"><p class="rs-how">두 치환기의 결합이 ${ans === 'cis' ? '둘 다 쐐기이거나 둘 다 빗금 쐐기 → 고리의 같은 면 → <b>cis</b>' : '하나는 쐐기, 하나는 빗금 쐐기 → 고리의 반대 면 → <b>trans</b>'}. 고리는 돌 수 없어서 cis 와 trans 는 서로 다른 화합물(부분입체이성질체)입니다.${e.res.ringCT && e.res.ringCT.plain ? ' 이 경우 두 탄소는 R/S 입체중심이 아니어서 이름에 cis-/trans- 를 붙입니다.' : ''}</p></div>`
+      why: () => `<div class="rs-card panel"><p class="rs-how">두 치환기의 결합이 ${ans === 'cis' ? '모두 굵은 쐐기이거나 모두 점선 쐐기이므로 고리의 같은 면 → <b>cis</b>' : '하나는 굵은 쐐기, 하나는 점선 쐐기이므로 고리의 반대 면 → <b>trans</b>'}. 고리 결합은 자유 회전이 불가능하므로 cis 와 trans 는 서로 다른 부분입체이성질체입니다.${e.res.ringCT && e.res.ringCT.plain ? ' 이 경우 두 탄소는 CIP 입체중심이 아니므로 이름 앞에 cis-/trans- 를 붙입니다.' : ''}</p></div>`
     };
   }
   return null;
@@ -308,11 +308,11 @@ function ezQ() {
     const both = e.mol.atoms[d.a].h === 1 && e.mol.atoms[d.b].h === 1;
     return {
       kind: 'ez', e, mol3d: e, answer: d.desc, open: buildOpen(e),
-      prompt: '이 이중결합은 E 일까 Z 일까? 양 끝에서 CIP 순위가 높은 치환기끼리 비교하세요.',
+      prompt: '이 이중결합의 배치는? 양 끝 탄소에서 CIP 우선순위가 높은 치환기의 상대 위치로 판정합니다.',
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true }),
-      opts: [{ key: 'E', label: 'E', sub: 'entgegen · 높은 것끼리 반대쪽' }, { key: 'Z', label: 'Z', sub: 'zusammen · 높은 것끼리 같은 쪽' }],
+      opts: [{ key: 'E', label: 'E', sub: 'entgegen · 우선 치환기가 반대쪽' }, { key: 'Z', label: 'Z', sub: 'zusammen · 우선 치환기가 같은 쪽' }],
       verdict: () => `<b>${d.desc}</b> · ${esc(e.res.nameEn)}`,
-      why: () => `<div class="rs-card panel"><p class="rs-how">${labC(e, d.a)} 쪽: <b>${esc(A[0])}</b> &gt; ${esc(A[1])} · ${labC(e, d.b)} 쪽: <b>${esc(B[0])}</b> &gt; ${esc(B[1])} → 높은 것끼리 ${d.desc === 'Z' ? '같은 쪽 → <b>Z</b>' : '반대쪽 → <b>E</b>'}. ${both ? `양쪽 탄소에 H 가 하나씩이라 ${d.desc === 'Z' ? 'cis' : 'trans'} 라고 불러도 같습니다.` : '치환기가 셋 이상이라 cis/trans 로는 모호해서 E/Z 로만 부릅니다.'}</p></div>`
+      why: () => `<div class="rs-card panel"><p class="rs-how">${labC(e, d.a)} 쪽: <b>${esc(A[0])}</b> &gt; ${esc(A[1])} · ${labC(e, d.b)} 쪽: <b>${esc(B[0])}</b> &gt; ${esc(B[1])} → 우선 치환기가 ${d.desc === 'Z' ? '같은 쪽이므로 <b>Z</b>' : '반대쪽이므로 <b>E</b>'}. ${both ? `양 끝 탄소에 H 가 하나씩이므로 ${d.desc === 'Z' ? 'cis' : 'trans'} 와 같습니다.` : '삼치환 이상의 이중결합은 cis/trans 기준이 모호하므로 E/Z 로만 표시합니다.'}</p></div>`
     };
   }
   return null;
@@ -329,13 +329,13 @@ function mesoQ() {
     if (ans !== target && t < 60) continue;
     return {
       kind: 'meso', e, mol3d: e, answer: ans, open: buildOpen(e),
-      prompt: '이 분자는 거울상과 겹칠까(메소), 겹치지 않을까(카이랄)? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.',
+      prompt: '이 화합물은 메소 화합물인가, 카이랄 화합물인가? (굵은 쐐기: 지면 앞쪽 · 점선 쐐기: 지면 뒤쪽)',
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true, rsLabels: done }),
-      opts: [{ key: 'meso', label: '메소', sub: '거울상과 겹친다 · 광학 비활성' }, { key: 'chiral', label: '카이랄', sub: '거울상과 다르다 · 광학 활성' }],
+      opts: [{ key: 'meso', label: '메소', sub: '거울상과 포개어짐 · 광학 비활성' }, { key: 'chiral', label: '카이랄', sub: '거울상과 포개어지지 않음 · 광학 활성' }],
       verdict: () => `<b>${ans === 'meso' ? '메소' : '카이랄'}</b> · ${esc(e.res.nameEn)}`,
       why: () => `<div class="rs-card panel"><p class="rs-how">${ans === 'meso'
-        ? `입체중심이 ${e.res.rs.size}개 있지만 분자 안에 거울면이 있어(대칭인 두 중심이 R · S 로 서로 반대) 거울상과 같은 분자입니다. 그래서 빛을 돌리지 않습니다.`
-        : `거울상은 <span class="mono">${esc(e.res.mirror ? e.res.mirror.en : '')}</span> — 이름이 달라 겹치지 않는 다른 분자입니다.${e.res.rs.size === 2 ? ' 대칭인 두 중심이 같은 배열(RR · SS)이면 거울면이 없습니다.' : ''}`}</p></div>`
+        ? `입체중심이 ${e.res.rs.size}개 있으나 분자 내 대칭면이 있어(대칭 위치의 두 중심이 R · S 로 반대) 거울상과 포개어집니다. 따라서 광학 비활성입니다.`
+        : `거울상 이성질체는 <span class="mono">${esc(e.res.mirror ? e.res.mirror.en : '')}</span> 로, 서로 포개어지지 않습니다.${e.res.rs.size === 2 ? ' 대칭 위치의 두 중심이 같은 배열(RR · SS)이면 대칭면이 없습니다.' : ''}`}</p></div>`
     };
   }
   return null;
@@ -364,11 +364,11 @@ function identifyQ() {
     const opts = shuffle([g.id, ...others].map(id => { const x = GI.find(y => y.id === id); return { key: id, label: esc(x.ko), sub: x.fg }; }));
     return {
       kind: 'identify', e, mol3d: e, answer: g.id, open: ['groups', { sub: g.id }],
-      prompt: '이 분자에 있는 작용기는?',
+      prompt: '이 화합물의 작용기는?',
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: false, compact: true }),
       opts,
       verdict: () => `<b>${esc(g.ko)}</b> (${g.fg}) · ${esc(e.res.nameEn)}`,
-      why: () => `<p class="note">${esc(g.desc)}</p><p class="note">이름에서는 ${g.rank ? `주 작용기면 접미사 <code>${esc(g.suffix[0])}</code>, 아니면 접두사 <code>${esc(g.prefix[0])}</code>` : `언제나 접두사 <code>${esc(g.prefix[0])}</code>`} → <span class="mono">${tokensHTML(getLang() === 'ko' ? e.res.ko : e.res.en)}</span></p>`
+      why: () => `<p class="note">${esc(g.desc)}</p><p class="note">명명 시 ${g.rank ? `주 작용기이면 접미사 <code>${esc(g.suffix[0])}</code>, 그렇지 않으면 접두사 <code>${esc(g.prefix[0])}</code>` : `항상 접두사 <code>${esc(g.prefix[0])}</code>`} → <span class="mono">${tokensHTML(getLang() === 'ko' ? e.res.ko : e.res.en)}</span></p>`
     };
   }
   return null;
@@ -393,11 +393,11 @@ function principalQ() {
     const P = e.res.P;
     return {
       kind: 'principal', e, mol3d: e, answer: P, open: buildOpen(e),
-      prompt: '이 분자의 이름에서 접미사(이름 끝)가 되는 작용기는?',
+      prompt: '이 화합물의 주 작용기(접미사로 표시되는 작용기)는?',
       pic: done => drawMolecule(e.mol, e.res, { mode: mode(), locants: done, chain: done, compact: true }),
       opts: shuffle(keys.map(c => ({ key: c, label: esc(CLASS[c].ko), sub: CLASS[c].fg }))),
       verdict: () => `<b>${esc(CLASS[P].ko)}</b> · <span class="mono">${tokensHTML(getLang() === 'ko' ? e.res.ko : e.res.en)}</span>`,
-      why: () => `<p class="note">이 분자에는 ${present.map(c => CLASS[c].ko).join(' · ')} 이 있습니다. 우선순위 ${PRIORITY.map(c => c === P ? `<b>${CLASS[c].ko}</b>` : CLASS[c].ko).join(' &gt; ')} 에서 가장 높은 <b>${CLASS[P].ko}</b> 가 접미사가 되고, 나머지는 접두사가 됩니다.</p>`
+      why: () => `<p class="note">포함된 작용기: ${present.map(c => CLASS[c].ko).join(' · ')}. 우선순위 ${PRIORITY.map(c => c === P ? `<b>${CLASS[c].ko}</b>` : CLASS[c].ko).join(' &gt; ')} 에서 가장 높은 <b>${CLASS[P].ko}</b> 가 주 작용기로서 접미사가 되고, 나머지는 접두사로 나타냅니다.</p>`
     };
   }
   return null;
@@ -418,10 +418,10 @@ function affixQ() {
   const others = shuffle(pool.filter(x => x !== g)).slice(0, 3);
   const field = v === 'suffix' ? 'suffix' : v === 'ring' ? 'ring' : 'prefix';
   const txt = x => x[field][0];
-  const prompt = v === 'suffix' ? `${g.ko}(${g.fg})가 주 작용기일 때 사슬 이름의 끝(접미사)은?`
-    : v === 'ring' ? `${g.ko}(${g.fg})가 고리에 붙은 주 작용기일 때 이름 끝은?`
-      : v === 'prefix' ? `${g.ko}(${g.fg})가 접두사로 쓰일 때는?`
-        : `접두사 ‘${shown}’ 는 어떤 작용기?`;
+  const prompt = v === 'suffix' ? `${g.ko}(${g.fg})가 주 작용기일 때 사슬 화합물의 접미사는?`
+    : v === 'ring' ? `${g.ko}(${g.fg})가 고리에 결합한 주 작용기일 때의 접미사는?`
+      : v === 'prefix' ? `${g.ko}(${g.fg})의 접두사 형태는?`
+        : `접두사 ‘${shown}’ 가 나타내는 작용기는?`;
   const opts = shuffle([g, ...others].map(x => v === 'reverse' ? { key: x.id, label: esc(x.ko), sub: x.fg } : { key: x.id, label: esc(txt(x)), sub: '' }));
   const ex = entry(fromSmiles(g.demo));
   return {
@@ -446,15 +446,15 @@ export function mount(root, app, params) {
   const key = () => S.area + ':' + topicOf();
 
   root.innerHTML = `<section class="page"><div class="quiz">
-    <p class="eyebrow"><span class="bar"></span>05 — QUIZ</p>
-    <h1 class="title">QUIZ<small>분야를 골라 집중해서</small></h1>
+    <p class="eyebrow"><span class="bar"></span>05 — PRACTICE</p>
+    <h1 class="title">PRACTICE<small>연습 문제</small></h1>
     <div class="q-areas" role="tablist" aria-label="분야">${AREAS.map(a => `<button type="button" role="tab" data-area="${a.id}">${a.ko}</button>`).join('')}</div>
     <details class="q-topics-box"${innerWidth >= 700 ? ' open' : ''}><summary><span class="lbl">주제</span><b class="q-cur"></b><small>바꾸기</small></summary><div class="q-topics" role="radiogroup" aria-label="주제"></div></details>
     <div class="q-bar">
       <div class="q-sets">
         <div class="seg" role="group" aria-label="문제 방식" data-for="name"><button type="button" data-dir="name">구조 → 이름</button><button type="button" data-dir="struct">이름 → 구조</button></div>
-        <div class="seg" role="group" aria-label="난이도" data-for="name"><button type="button" data-level="easy">조각 1–2개</button><button type="button" data-level="hard">2–4개</button></div>
-        <div class="seg" role="group" aria-label="반응 문제" data-for="react"><button type="button" data-rx="prod">생성물 맞히기</button><button type="button" data-rx="reagent">시약 맞히기</button></div>
+        <div class="seg" role="group" aria-label="난이도" data-for="name"><button type="button" data-level="easy">치환기 1–2개</button><button type="button" data-level="hard">2–4개</button></div>
+        <div class="seg" role="group" aria-label="반응 문제" data-for="react"><button type="button" data-rx="prod">생성물 예측</button><button type="button" data-rx="reagent">시약 선택</button></div>
       </div>
       <p class="score" aria-live="polite"></p>
     </div>
@@ -495,13 +495,13 @@ export function mount(root, app, params) {
     S.done = false; S.chosen = null;
     let q = null;
     for (let i = 0; i < 3 && !q; i++) q = makeQ();
-    if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다. 다시 눌러 주세요.</p><div class="q-actions"><button class="btn solid" type="button" id="q-next">다시</button></div>'; card.querySelector('#q-next').addEventListener('click', next); return; }
+    if (!q) { card.innerHTML = '<p>문제를 생성하지 못했습니다. 다시 시도하세요.</p><div class="q-actions"><button class="btn solid" type="button" id="q-next">다시</button></div>'; card.querySelector('#q-next').addEventListener('click', next); return; }
     if (q.answer !== undefined && !q.correct) q.correct = q.opts.find(o => o.key === q.answer);
     S.q = q;
     if (q.mol3d && q.mol3d.res) app.setMol(q.mol3d);
     draw();
   }
-  const actions = () => `<div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">${S.q.open[0] === 'react' ? '반응 예측에서 열기' : S.q.open[0] === 'groups' ? '작용기 도감에서 보기' : '분자 조립에서 열기'}</button></div>`;
+  const actions = () => `<div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">${S.q.open[0] === 'react' ? '반응 예측에서 열기' : S.q.open[0] === 'groups' ? '작용기 페이지에서 보기' : '편집기에서 열기'}</button></div>`;
   function wire() {
     card.querySelectorAll('.q-opt').forEach(b => b.addEventListener('click', () => answer(S.q.opts[+b.dataset.i])));
     if (S.done) {
@@ -535,7 +535,7 @@ export function mount(root, app, params) {
         verdict = `<b>${R.label}</b> · ${esc(R.note)} → ${esc(q.prod.res.nameEn)}`;
         why = `<p class="note">${esc(q.res.mech || '')}</p><ol class="steps" style="padding:0">${(q.res.steps || []).map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}</div></li>`).join('')}</ol>${q.res.select && q.res.select.length ? `<ul class="sel">${q.res.select.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}`;
       } else { verdict = q.verdict(); why = q.why(); }
-      fb = `<div class="q-feedback"><p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${verdict}</p>${why}${actions()}</div>`;
+      fb = `<div class="q-feedback"><p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '오답'}</b> — ${verdict}</p>${why}${actions()}</div>`;
     }
     card.innerHTML = head + `<div class="q-opts${q.opts.length === 2 ? ' two' : ''}">${opts}</div>` + fb;
     wire();
@@ -546,7 +546,7 @@ export function mount(root, app, params) {
     let head;
     if (q.kind === 'react') head = `<p class="q-prompt">주생성물은?</p><div class="q-rx">${small(q.sub)}<div class="rx-arrow"><span class="rx-reagent">${q.res.reaction.label}</span><svg viewBox="0 0 120 16" aria-hidden="true"><path d="M2 8h112M104 2l10 6-10 6"/></svg></div><span class="q-what">?</span></div>`;
     else if (q.kind === 'name') head = `<p class="q-prompt">이 분자의 IUPAC 이름은?</p><div class="q-struct">${small(q.e)}</div>`;
-    else head = `<p class="q-prompt">이 이름의 구조는?</p><p class="q-name">${tokensHTML(getLang() === 'ko' ? q.e.res.ko : q.e.res.en)}</p>`;
+    else head = `<p class="q-prompt">이 이름에 해당하는 구조는?</p><p class="q-name">${tokensHTML(getLang() === 'ko' ? q.e.res.ko : q.e.res.en)}</p>`;
     const opts = q.opts.map((o, i) => {
       const cls = !done ? '' : o === q.correct ? ' right' : o === chosen ? ' wrong' : '';
       const cap = done ? `<span class="q-cap">${esc(nameOf(o.e))}${o.same ? ' (반응 없음)' : ''}</span>` : '';
@@ -557,7 +557,7 @@ export function mount(root, app, params) {
     let fb = '';
     if (done) {
       const right = chosen === q.correct;
-      const verdict = `<p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${esc(q.correct.e.res.nameEn)} · ${esc(q.correct.e.res.nameKo)}</p>`;
+      const verdict = `<p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '오답'}</b> — ${esc(q.correct.e.res.nameEn)} · ${esc(q.correct.e.res.nameKo)}</p>`;
       if (q.kind === 'react') {
         const r = q.res;
         fb = `<div class="q-feedback">${verdict}<p class="note">${esc(r.mech || '')}</p>
@@ -566,7 +566,7 @@ export function mount(root, app, params) {
       } else {
         const st = steps(q.e.mol, q.e.res);
         fb = `<div class="q-feedback">${verdict}
-          ${!right && chosen ? `<p class="note">고른 보기는 ${esc(chosen.e.res.nameEn)} — 작용기 자리나 종류가 다른 분자입니다.</p>` : ''}
+          ${!right && chosen ? `<p class="note">선택한 보기는 ${esc(chosen.e.res.nameEn)} 로, 작용기의 위치 또는 종류가 다른 화합물입니다.</p>` : ''}
           <ol class="steps" style="padding:0">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol>${actions()}</div>`;
       }
     }

@@ -139,19 +139,19 @@ function ringTypes(mol, R) {
     if (isBenzene(mol, r)) return 'benzene';
     const els = r.map(i => mol.atoms[i].el);
     if (els.every(e => e === 'C')) {
-      if (r.length < 3 || r.length > 8) throw new NameError('고리 크기 3~8 만 다룹니다');
+      if (r.length < 3 || r.length > 8) throw new NameError('3~8원자 고리만 지원합니다');
       return 'cyclo';
     }
     const saturated = r.every((a, k) => { const b = bondBetween(mol, a, r[(k + 1) % r.length]); return b && b.o === 1 && !b.arom; });
     if (OXA[r.length] && saturated && els.filter(e => e === 'O').length === 1 && els.filter(e => e === 'C').length === r.length - 1) return 'oxa';
-    throw new NameError('이 헤테로고리는 아직 이름을 짓지 못합니다');
+    throw new NameError('이 헤테로고리는 현재 명명 엔진이 지원하지 않습니다');
   });
 }
 
 /* ── 사슬 · 고리 이름 조각 ──────────────────────── */
 /* n: 탄소 수, enes/ynes: 번호 목록, suf: { en, ko, vowel, locs(배열 또는 null) }, o: { ring, noUnsatLocs } */
 function parentWord(n, enes, ynes, suf, o = {}) {
-  if (n > 20) throw new NameError('주사슬 탄소가 20개를 넘습니다');
+  if (n > 20) throw new NameError('주사슬 탄소가 20개를 넘어 지원하지 않습니다');
   const toks = [];
   const pre = o.ring ? 'cyclo' : '', preKo = o.ring ? '사이클로' : '';
   const vowel = !!(suf && suf.vowel);
@@ -215,7 +215,7 @@ function suffixFor(P, k, place, halide) {
   if (P === 'ketone') return { en: MULT[k] + 'one', ko: MULT_KO[k] + '온', vowel: false };
   if (P === 'alcohol') return { en: k === 4 ? 'tetrol' : MULT[k] + 'ol', ko: k === 4 ? '테트롤' : MULT_KO[k] + '올', vowel: false };
   if (P === 'amine') return { en: MULT[k] + 'amine', ko: MULT_KO[k] + '아민', vowel: false };
-  throw new NameError('이 작용기 조합은 아직 이름을 짓지 못합니다');
+  throw new NameError('이 작용기 조합은 현재 명명 엔진이 지원하지 않습니다');
 }
 const RETAINED = {
   acid: ['benzoic acid', '벤조산'], ester: ['benzoate', '벤조산'], acylhalide: ['benzoyl ', '벤조일 '], amide: ['benzamide', '벤즈아마이드'],
@@ -241,7 +241,7 @@ function subRaw(C, r, from, bo) {
     if (!others.length) return simple(...PX.amino);
     const acyl = others.filter(c => C.info[c] && C.info[c].oxo.length);
     if (acyl.length === 1 && others.length === 1) { const ac = acylName(C, acyl[0], r); return amido(ac); }
-    if (acyl.length) throw new NameError('이 질소 치환 형태는 아직 이름을 짓지 못합니다');
+    if (acyl.length) throw new NameError('이 질소 치환 형태는 현재 명명 엔진이 지원하지 않습니다');
     const names = others.map(c => sub(C, c, r, 1));
     const g = groupNames(names);
     return { en: g.en + 'amino', ko: g.ko + '아미노', key: letters(g.en + 'amino'), compound: true };
@@ -254,7 +254,7 @@ function subRaw(C, r, from, bo) {
     if (f && f.oxo.length) { const ac = acylName(C, other.j, r); return { en: ac.en + 'oxy', ko: ac.ko + '옥시', key: letters(ac.en + 'oxy'), compound: ac.compound || true, base: null }; }
     return alkoxy(sub(C, other.j, r, 1));
   }
-  if (a.el !== 'C') throw new NameError(a.el + ' 원자가 든 치환기는 아직 이름을 짓지 못합니다');
+  if (a.el !== 'C') throw new NameError(a.el + ' 원자가 든 치환기는 현재 명명 엔진이 지원하지 않습니다');
   if (C.R.of[r] >= 0) return ringSub(C, r, from, bo);
   const f = C.info[r];
   if (bo === 1 && f.kind) {
@@ -313,7 +313,7 @@ function acylName(C, c, from) {
   const A = C.mol.atoms, f = C.info[c];
   if (A[c].h >= 1) return simple(...PX.formyl);
   const R = C.mol.nb[c].filter(n => n.j !== from && n.o === 1 && A[n.j].el === 'C').map(n => n.j);
-  if (R.length !== 1) throw new NameError('이 아실기는 아직 이름을 짓지 못합니다');
+  if (R.length !== 1) throw new NameError('이 아실기는 현재 명명 엔진이 지원하지 않습니다');
   const r = R[0];
   if (C.R.of[r] >= 0) {
     const ri = C.R.of[r], type = C.types[ri];
@@ -413,7 +413,7 @@ function ringSub(C, r, from, bo) {
   const yl = bo === 2 ? 'ylidene' : 'yl', ylKo = bo === 2 ? '일리덴' : '일';
   let en, ko, base = null, baseKo = null;
   if (type === 'benzene') { if (bo !== 1) throw new NameError('벤젠 고리에 이중결합으로 붙은 구조'); en = 'phenyl'; ko = '페닐'; base = 'phenyl'; baseKo = '페닐'; }
-  else if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 아직 이름을 짓지 못합니다');
+  else if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 현재 명명 엔진이 지원하지 않습니다');
   else if (isOxa(type)) { const O = OXA[rs.ring.length]; en = `${O[2]}-${rs.locOf(r)}-${yl}`; ko = `${O[3]}-${rs.locOf(r)}-${ylKo}`; }
   else {
     const m = rs.ring.length;
@@ -429,7 +429,7 @@ function ringSubCore(C, r, from) {
   const ri = C.R.of[r], ring = C.R.list[ri], type = C.types[ri], m = ring.length;
   let best = null;
   const skip = new Set([from]);
-  if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 아직 이름을 짓지 못합니다');
+  if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 현재 명명 엔진이 지원하지 않습니다');
   const starts = isOxa(type) ? [ring.findIndex(i => C.mol.atoms[i].el === 'O')] : [ring.indexOf(r)];
   for (const s of starts) for (const d of [1, -1]) {
     const pos = new Map();
@@ -594,7 +594,7 @@ function candidates(C) {
   const assembled = new Set();
   for (const bi of R.bicyclic || []) {
     const het = bi.atoms.find(a => A[a].el !== 'C');
-    if (bi.atoms.some(a => A[a].el !== 'C' && A[a].el !== 'O') || bi.atoms.filter(a => A[a].el !== 'C').length > 1) throw new NameError('이 고리계의 헤테로 원자는 아직 이름을 짓지 못합니다');
+    if (bi.atoms.some(a => A[a].el !== 'C' && A[a].el !== 'O') || bi.atoms.filter(a => A[a].el !== 'C').length > 1) throw new NameError('이 고리계의 헤테로 원자는 현재 명명 엔진이 지원하지 않습니다');
     const nD = mol.bonds.filter(b => b.o === 2 && bi.atoms.includes(b.a) && bi.atoms.includes(b.b)).length;
     out.push({ type: 'vb', bi, het: het === undefined ? null : het, atoms: bi.atoms, size: bi.atoms.length, nRings: 2, cls: het === undefined ? 2 : 3, nMult: nD, nDouble: nD });
   }
@@ -712,7 +712,7 @@ function evaluate(C, cand, pos) {
     for (const b of C.mol.bonds) {
       if (b.o !== 2 || !pos.has(b.a) || !pos.has(b.b)) continue;
       const la = pos.get(b.a), lb = pos.get(b.b);
-      if (Math.abs(la - lb) !== 1) throw new NameError('다리목에 걸친 이중결합은 아직 이름을 짓지 못합니다');
+      if (Math.abs(la - lb) !== 1) throw new NameError('다리목에 걸친 이중결합은 현재 명명 엔진이 지원하지 않습니다');
       enes.push(Math.min(la, lb));
     }
     enes.sort((x, y) => x - y);
@@ -781,14 +781,14 @@ export function checkSupported(mol) {
   A.forEach((a, i) => {
     if (a.el === 'C' && mol.nb[i].some(n => n.o === 2 && A[n.j].el === 'O')) {
       const het = mol.nb[i].filter(n => n.o === 1 && A[n.j].el !== 'C').length;
-      if (het >= 2) throw new NameError('탄산 · 카바메이트 계열 구조는 아직 이름을 짓지 못합니다');
+      if (het >= 2) throw new NameError('탄산 · 카바메이트 계열 구조는 현재 명명 엔진이 지원하지 않습니다');
     }
     if (a.el === 'O' && mol.nb[i].length === 2 && mol.nb[i].every(n => A[n.j].el === 'C' && mol.nb[n.j].some(m => m.o === 2 && A[m.j].el === 'O')))
-      throw new NameError('산 무수물은 아직 이름을 짓지 못합니다');
+      throw new NameError('산 무수물은 현재 명명 엔진이 지원하지 않습니다');
     if (a.el === 'N' && mol.nb[i].filter(n => A[n.j].el === 'C' && mol.nb[n.j].some(m => m.o === 2 && A[m.j].el === 'O')).length >= 2)
-      throw new NameError('이미드(N 에 아실기 둘)는 아직 이름을 짓지 못합니다');
+      throw new NameError('이미드(N 에 아실기 둘)는 현재 명명 엔진이 지원하지 않습니다');
   });
-  for (const a of A) if (!['C', 'N', 'O', 'F', 'Cl', 'Br', 'I'].includes(a.el)) throw new NameError(a.el + ' 원자가 든 분자는 아직 이름을 짓지 못합니다');
+  for (const a of A) if (!['C', 'N', 'O', 'F', 'Cl', 'Br', 'I'].includes(a.el)) throw new NameError(a.el + ' 원자가 든 분자는 현재 명명 엔진이 지원하지 않습니다');
   for (const b of mol.bonds) {
     const x = A[b.a], y = A[b.b];
     const els = [x.el, y.el].sort().join('');
@@ -798,7 +798,7 @@ export function checkSupported(mol) {
     if (els === 'CN' && b.o === 3 && (x.el === 'N' ? mol.nb[b.a] : mol.nb[b.b]).length === 1) continue;
     if ((x.el === 'C' || y.el === 'C') && HALOGENS.has(x.el === 'C' ? y.el : x.el) && b.o === 1) continue;
     if (els === 'NO' && (x.el === 'N' ? x : y).q === 1) continue;
-    throw new NameError('이 결합(' + x.el + (b.o === 2 ? '=' : b.o === 3 ? '≡' : '–') + y.el + ')이 든 분자는 아직 이름을 짓지 못합니다');
+    throw new NameError('이 결합(' + x.el + (b.o === 2 ? '=' : b.o === 3 ? '≡' : '–') + y.el + ')이 든 분자는 현재 명명 엔진이 지원하지 않습니다');
   }
 }
 
@@ -806,9 +806,9 @@ export function nameMolecule(mol, opts = {}) {
   const rule = opts.rule || '2013';
   checkSupported(mol);
   const { info, R } = analyze(mol);
-  if (R.fused && R.list.some((r, i) => R.list.some((q, j) => j !== i && q.some(a => r.includes(a))) && !R.bicyclic.some(b => r.every(a => b.atoms.includes(a))))) throw new NameError('고리가 셋 이상 붙거나 한 원자를 나눠 갖는(스파이로) 구조는 아직 이름을 짓지 못합니다');
-  if (!mol.atoms.some(a => a.el === 'C')) throw new NameError('탄소가 없는 분자');
-  if (mol.atoms.some(a => a.q && !(a.el === 'N' && a.q === 1) && !(a.el === 'O' && a.q === -1))) throw new NameError('이온은 이름을 짓지 않습니다');
+  if (R.fused && R.list.some((r, i) => R.list.some((q, j) => j !== i && q.some(a => r.includes(a))) && !R.bicyclic.some(b => r.every(a => b.atoms.includes(a))))) throw new NameError('고리가 셋 이상 붙거나 한 원자를 나눠 갖는(스파이로) 구조는 현재 명명 엔진이 지원하지 않습니다');
+  if (!mol.atoms.some(a => a.el === 'C')) throw new NameError('탄소가 없는 분자는 명명 대상이 아닙니다');
+  if (mol.atoms.some(a => a.q && !(a.el === 'N' && a.q === 1) && !(a.el === 'O' && a.q === -1))) throw new NameError('이온은 명명 대상이 아닙니다');
   const C = { mol, info, R, types: ringTypes(mol, R), memo: new Map(), rule };
   C.db = doubleBondStereo(mol);
   const SI = stereoInfo(mol);
@@ -816,7 +816,7 @@ export function nameMolecule(mol, opts = {}) {
   /* 두 고리 계 안에서 R/S 가 아닌 배치(exo · endo, syn · anti)가 정해진 자리는 아직 이름에 담지 못한다 */
   for (const bi of R.bicyclic || []) for (const a of bi.atoms) {
     if (bi.bh.includes(a) || !mol.atoms[a].chi || SI.all.has(a) || SI.same.has(a) || mol.atoms[a].h !== 1) continue;
-    if (mol.nb[a].filter(n => !bi.atoms.includes(n.j)).length === 1) throw new NameError('두 고리 계 안의 이 입체 배치(exo · endo 나 syn · anti)는 아직 이름에 담지 못합니다');
+    if (mol.nb[a].filter(n => !bi.atoms.includes(n.j)).length === 1) throw new NameError('두 고리 계 안의 이 입체 배치(exo · endo 나 syn · anti)는 현재 이름에 표시하지 못합니다');
   }
   C.ct = cisTrans(mol);
   C.present = classesPresent(C);
@@ -826,7 +826,7 @@ export function nameMolecule(mol, opts = {}) {
   C.tri = C.S.size > 2;
 
   const cands = candidates(C);
-  if (!cands.length) throw new NameError('모체를 찾지 못했습니다');
+  if (!cands.length) throw new NameError('모체를 결정하지 못했습니다');
   /* 1단계: 번호와 상관없는 기준으로 추림 */
   let top = [cands[0]];
   for (const c of cands.slice(1)) {

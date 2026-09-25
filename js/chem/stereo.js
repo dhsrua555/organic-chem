@@ -203,7 +203,7 @@ export function defineMissing(mol) {
 }
 /* 입체중심 c 의 배열을 뒤집는다 (R ↔ S) */
 export function flipCenter(mol, c) {
-  if (!chiralOK(mol, c) || !stereoSites(mol).includes(c)) return { error: '입체중심(치환기 넷이 모두 다른 sp³ 탄소)이나 고리의 치환된 탄소(cis/trans)를 눌러 주세요' };
+  if (!chiralOK(mol, c) || !stereoSites(mol).includes(c)) return { error: '입체중심(네 치환기가 모두 다른 sp³ 탄소) 또는 치환된 고리 탄소(cis/trans)를 선택하세요' };
   const m = clone(mol);
   m.atoms[c] = { ...m.atoms[c], chi: { n: m.atoms[c].chi.n.slice(), s: -m.atoms[c].chi.s } };
   return { mol: m };

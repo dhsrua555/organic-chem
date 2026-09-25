@@ -24,7 +24,7 @@ export function mount(root, app) {
     st.classList.remove('slide-anim'); void st.offsetWidth; st.classList.add('slide-anim');
     st.innerHTML = `<h1 class="title">${s.en}<small>${s.ko}</small></h1>
       <p class="slide-desc">${esc(s.desc)}</p>
-      <p class="slide-cap"><span>화면 속 분자</span><b>${esc(nm)}</b><span>${formulaText(m.f)}</span>${m.common ? `<span>${esc(m.common.ko)}</span>` : ''}</p>
+      <p class="slide-cap"><span>표시 분자</span><b>${esc(nm)}</b><span>${formulaText(m.f)}</span>${m.common ? `<span>${esc(m.common.ko)}</span>` : ''}</p>
       <a class="enter" href="#${s.route}"><span>ENTER</span></a>`;
     root.querySelector('#pg-a').textContent = s.n;
     root.querySelector('#pg-b').textContent = SLIDES[(i + 1) % SLIDES.length].n;
