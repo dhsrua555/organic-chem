@@ -107,6 +107,7 @@ function stereoText(res) {
     out.push(ez.length > 1 || rs.length ? `이중결합마다 E/Z 를 번호와 함께 적습니다 (${b(ez.join(','))}). 양 끝에서 CIP 우선순위가 높은 치환기끼리 같은 쪽이면 Z, 반대쪽이면 E.`
       : `이중결합 양 끝에서 CIP 우선순위(원자번호)가 높은 치환기끼리 ${ez[0].endsWith('Z') ? '같은 쪽 → ' + b('Z') + ' (zusammen)' : '반대쪽 → ' + b('E') + ' (entgegen)'}입니다.`);
   }
+  if (res.pseudo && res.pseudo.size) out.push(`소문자 ${b('r · s')} 는 가짜 비대칭 중심: 원자로는 똑같은 두 가지가 한쪽은 R, 한쪽은 S 를 품고 있어 R 쪽을 높게 쳐서 정합니다 (CIP 규칙 5). 거울상을 만들어도 바뀌지 않습니다.`);
   if (rs.length) out.push(`치환기 넷이 모두 다른 탄소(입체중심)마다 CIP 순위 ①~④ 를 매기고, 가장 낮은 ④ 를 뒤로 보냈을 때 ① → ② → ③ 이 시계 방향이면 ${b('R')}, 반대면 ${b('S')} (${b(rs.join(','))}). E/Z · R/S 는 번호 순서대로 한 괄호에 모아 이름 맨 앞에 씁니다.`);
   const undef = res.undef ? res.undef.length : 0;
   if (undef) out.push(`입체중심 ${undef}개(그림의 *)는 배열이 정해지지 않아 R/S 없이 적었습니다.`);
@@ -179,7 +180,7 @@ export function diff(prevMol, prev, mol, cur) {
     if (moved.length) out.push(`고리 위 두 치환기의 관계가 바뀌었습니다: ${moved.map(x => b((x.rel === 'cis' ? 'trans → cis' : 'cis → trans'))).join(', ')}.`);
   } else if (!(prev.ct || []).length && (cur.ct || []).length) out.push(`고리에 치환기가 둘이 되어 ${b('cis / trans')} 두 가지가 생겼습니다 → 지금은 ${b(cur.ct[0].rel)}.`);
   const pc = new Set(prev.centers || []), newC = (cur.centers || []).filter(c => !pc.has(c));
-  if (newC.length && cur.rs) out.push(`치환기 넷이 모두 다른 탄소가 새로 생겨 입체중심이 되었습니다 → ${newC.map(c => (cur.locLabel && cur.locLabel.get(c) ? 'C' + cur.locLabel.get(c) : '원자 ' + (c + 1)) + ' ' + b(cur.rs.get(c) || '*')).join(', ')}. 쐐기(앞으로 나온 결합)로 배열을 정해 두었고, R/S 도구로 뒤집을 수 있습니다.`);
+  if (newC.length && cur.rs) out.push(`치환기 넷이 모두 다른 탄소가 새로 생겨 입체중심이 되었습니다 → ${newC.map(c => (cur.locLabel && cur.locLabel.get(c) ? 'C' + cur.locLabel.get(c) : '원자 ' + (c + 1)) + ' ' + b(cur.rs.get(c) || (cur.pseudo && cur.pseudo.get(c)) || '*')).join(', ')}. 쐐기(앞으로 나온 결합)로 배열을 정해 두었고, R/S 도구로 뒤집을 수 있습니다.`);
   if (prev.rs && cur.rs) {
     const flippedC = [...cur.rs].filter(([c, d]) => prev.rs.has(c) && prev.rs.get(c) !== d && prevMol.atoms[c] && mol.atoms[c] && prevMol.atoms[c].chi && mol.atoms[c].chi && prevMol.atoms[c].chi.s !== mol.atoms[c].chi.s);
     if (flippedC.length) out.push(`입체중심의 배열을 거울상으로 뒤집었습니다: ${flippedC.map(([c, d]) => `${b(prev.rs.get(c) + ' → ' + d)}`).join(', ')}.`);

@@ -38,13 +38,15 @@ export function groupLabel(mol, c, j) {
     if (b.el !== 'C') return 'CH₂' + b.el + (b.h ? 'H' + (b.h > 1 ? SUBN(b.h) : '') : '');
     return 'CH₂–C…';
   }
-  if (R.of[j] >= 0 && R.of[j] === R.of[c]) return 'C' + hs + ' (고리)';
+  if (R.same(j, c)) return 'C' + hs + ' (고리)';
   return 'C' + hs + '(' + others.map(n => A[n.j].el).join(',') + ')';
 }
 
 const setTxt = z => '(' + z.map(zSym).join(', ') + ')';
 /* 두 가지 사이 순위 근거 한 줄 */
 function whyText(w, la, lb) {
+  if (w && w.rule === 5) return `두 가지의 원자는 똑같고, R 중심이 든 가지가 S 중심이 든 가지보다 높음 (CIP 규칙 5)`;
+  if (w && w.rule === 4) return `두 가지의 원자는 똑같고, 입체중심 짝이 같은 것(RR · SS)끼리인 가지가 높음 (CIP 규칙 4)`;
   if (!w || !w.depth) return `${la} > ${lb}`;
   if (w.depth === 1) return `붙은 원자의 원자번호 ${zSym(w.za[0])}(${w.za[0]}) > ${zSym(w.zb[0])}(${w.zb[0]})`;
   if (w.depth === 2) return `붙은 원자가 같아서 그다음 원자들을 비교: ${setTxt(w.za)} > ${setTxt(w.zb)}${w.za.length > 2 && hasDup(w) ? ' (이중결합의 원자는 두 번 셉니다)' : ''}`;
@@ -62,12 +64,13 @@ export function centerHTML(mol, c, locOf, W) {
   const order = labs.map((l, k) => `<li><span class="cipn r${k + 1}">${k + 1}</span>${l}${k < 3 ? `<small>${whyText(det.why[k], l, labs[k + 1])}</small>` : ''}</li>`).join('');
   let how = '';
   const v = det.view;
+  const RS = det.rs ? det.rs.toUpperCase() : null;
   if (v && det.rs) {
     const turnKo = v.turn === 'cw' ? '시계 방향' : '시계 반대 방향';
     const rOf = t => t === 'cw' ? 'R' : 'S';
-    if (v.lowest === 'back' && rOf(v.turn) === det.rs) how = `가장 낮은 ④ ${labs[3]} 가 <b>뒤쪽</b>(${labs[3] === 'H' ? '쐐기의 반대편' : '점선 쐐기'})을 향합니다. 그대로 ① → ② → ③ 을 따라가면 <b>${turnKo}</b> → <b>${det.rs}</b>.`;
-    else if (v.lowest === 'front' && rOf(v.turn) !== det.rs) how = `가장 낮은 ④ ${labs[3]} 가 <b>앞쪽</b>(${labs[3] === 'H' ? '점선 쐐기의 반대편' : '쐐기'})으로 나와 있습니다. 그림에서 ① → ② → ③ 은 ${turnKo}이지만 ④ 가 앞이면 <b>거꾸로 읽어</b> <b>${det.rs}</b>.`;
-    else how = `④ 가 종이 면에 있어 그림만으로는 읽기 어렵습니다. 3D 보기로 ④ 를 뒤로 돌리면 ① → ② → ③ 이 ${det.rs === 'R' ? '시계 방향 → R' : '시계 반대 방향 → S'}.`;
+    if (v.lowest === 'back' && rOf(v.turn) === RS) how = `가장 낮은 ④ ${labs[3]} 가 <b>뒤쪽</b>(${labs[3] === 'H' ? '쐐기의 반대편' : '점선 쐐기'})을 향합니다. 그대로 ① → ② → ③ 을 따라가면 <b>${turnKo}</b> → <b>${det.rs}</b>.`;
+    else if (v.lowest === 'front' && rOf(v.turn) !== RS) how = `가장 낮은 ④ ${labs[3]} 가 <b>앞쪽</b>(${labs[3] === 'H' ? '점선 쐐기의 반대편' : '쐐기'})으로 나와 있습니다. 그림에서 ① → ② → ③ 은 ${turnKo}이지만 ④ 가 앞이면 <b>거꾸로 읽어</b> <b>${det.rs}</b>.`;
+    else how = `④ 가 종이 면에 있어 그림만으로는 읽기 어렵습니다. 3D 보기로 ④ 를 뒤로 돌리면 ① → ② → ③ 이 ${RS === 'R' ? '시계 방향 → ' + det.rs : '시계 반대 방향 → ' + det.rs}.`;
   }
   return `<div class="rs-one" data-center="${c}"><p class="rs-head">${head}</p><ol class="cip-list">${order}</ol>${how ? `<p class="rs-how">${how}</p>` : ''}</div>`;
 }
@@ -92,6 +95,7 @@ function cisTransHTML(mol, res, locOf, ko) {
     if (A.h === 1 && B.h === 1) { if (!(rn && rn.kind === 'alkene')) out.push(`<li>${where}: ${d.desc} = <b>${d.desc === 'Z' ? 'cis' : 'trans'}</b> (양쪽 탄소에 H 가 하나씩이라 둘이 같은 뜻).</li>`); }
     else out.push(`<li>${where}: <b>${d.desc}</b> — 치환기가 셋 이상인 이중결합은 무엇을 기준으로 cis/trans 인지 모호해서 E/Z 로만 부릅니다.</li>`);
   }
+  if (res.siteMissing && res.siteMissing.length) out.push(`<li>${res.siteMissing.map(lab).join(', ')} 의 배치(고리 위 셋 이상의 치환기 사이 cis · trans)는 R/S 로 나타나지 않아 이름에 넣지 못했습니다 — 그림의 쐐기를 보세요.</li>`);
   if (res.ringCT && res.ringCT.plain) out.push(`<li>이 고리의 두 탄소는 R/S 입체중심이 아니지만(고리 양쪽 길이 같음) cis · trans 두 가지가 따로 존재합니다. 이름 앞에 cis- · trans- 를 붙여 구별합니다.</li>`);
   return out.length ? `<div class="ct-box"><p class="lbl">시스 · 트랜스</p><ul>${out.join('')}</ul></div>` : '';
 }
@@ -103,11 +107,13 @@ export function rsCardHTML(mol, res, opts = {}) {
   if (!res.centers || !res.centers.length) return ctHTML ? `<div class="panel rs-card"><p class="lbl">입체 · 시스 · 트랜스</p>${ctHTML}</div>` : '';
   const W = wedges(mol);
   const locOf = c => res.locLabel && res.locLabel.get(c);
-  const defined = res.centers.filter(c => res.rs && res.rs.has(c));
+  const dOf = c => (res.rs && res.rs.get(c)) || (res.pseudo && res.pseudo.get(c));
+  const defined = res.centers.filter(c => dOf(c));
   const sel = opts.sel !== undefined && defined.includes(opts.sel) ? opts.sel : defined[0];
-  const tabs = defined.length > 1 ? `<div class="rs-tabs" role="tablist">${defined.map(c => `<button type="button" role="tab" data-cip="${c}" aria-selected="${c === sel}">${locOf(c) ? 'C' + locOf(c) : '원자 ' + (c + 1)} · ${res.rs.get(c)}</button>`).join('')}</div>` : '';
+  const tabs = defined.length > 1 ? `<div class="rs-tabs" role="tablist">${defined.map(c => `<button type="button" role="tab" data-cip="${c}" aria-selected="${c === sel}">${locOf(c) ? 'C' + locOf(c) : '원자 ' + (c + 1)} · ${dOf(c)}</button>`).join('')}</div>` : '';
   const undef = res.centers.length - defined.length;
   const extra = [];
+  if (res.pseudo && res.pseudo.size) extra.push(`<p class="note"><b>가짜 비대칭 중심 (소문자 r · s)</b>: ${[...res.pseudo].map(([c, d]) => `${locOf(c) ? 'C' + locOf(c) : '원자 ' + (c + 1)} = ${d}`).join(', ')}. 원자로는 똑같은 두 가지가 한쪽은 R, 한쪽은 S 중심을 품어 서로 거울상이라 R 쪽을 더 높게 칩니다 (규칙 5). 분자 전체를 거울에 비춰도 r · s 는 그대로입니다.</p>`);
   if (res.meso) extra.push(`<p class="note"><b>메소 화합물</b>: 입체중심이 ${defined.length}개 있지만 분자 안에 거울면이 있어 거울상과 겹칩니다 (광학 비활성).</p>`);
   else if (res.mirror) extra.push(`<p class="rs-mirror">거울상 이성질체: <span class="mono">${opts.ko ? res.mirror.ko : res.mirror.en}</span>${opts.mirrorBtn ? ' <button class="link" type="button" id="b-mirror">거울상으로 바꾸기</button>' : ''}</p>`);
   if (undef) extra.push(`<p class="hint">* 표시 ${undef}개는 배열(R/S)이 정해지지 않은 입체중심입니다${opts.racemic ? ' — 두 배열이 1:1 로 섞여 생깁니다 (라세미)' : ''}.</p>`);

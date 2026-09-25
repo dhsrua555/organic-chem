@@ -97,7 +97,12 @@ const CASES = [
   /* ── 고리 cis/trans (OPSIN 으로 확인) ── */
   ['C[C@@H]1CC[C@@H](C)CC1', 'trans-1,4-dimethylcyclohexane', 'trans-1,4-다이메틸사이클로헥세인'], ['C[C@@H]1CC[C@H](C)CC1', 'cis-1,4-dimethylcyclohexane'],
   ['C[C@H]1CC[C@H](O)CC1', 'trans-4-methylcyclohexan-1-ol'], ['OC(=O)[C@H]1CC[C@@H](C)CC1', 'cis-4-methylcyclohexane-1-carboxylic acid'],
-  ['CC(=O)N[C@H]1CC[C@@H](C)CC1', 'N-(cis-4-methylcyclohexyl)ethanamide']
+  ['CC(=O)N[C@H]1CC[C@@H](C)CC1', 'N-(cis-4-methylcyclohexyl)ethanamide'],
+  /* ── 가짜 비대칭 r/s (OPSIN 은 못 읽음 → RDKit 새 CIP 와 같은지 확인) ── */
+  ['C[C@@H](O)[C@H](O)[C@H](C)O', '(2R,3r,4S)-pentane-2,3,4-triol'], ['C[C@@H](O)[C@@H](O)[C@H](C)O', '(2R,3s,4S)-pentane-2,3,4-triol'],
+  ['O[C@@H](C(=O)O)[C@@H](O)[C@H](O)C(=O)O', '(2R,3s,4S)-2,3,4-trihydroxypentanedioic acid'],
+  ['O[C@H]1C[C@H](C)C[C@H]1O', '(1R,2S,4s)-4-methylcyclopentane-1,2-diol'], ['C[C@H]1C[C@@H](C)C[C@@H](Cl)C1', '(1s,3R,5S)-1-chloro-3,5-dimethylcyclohexane'],
+  ['O[C@H]1[C@@H](O)[C@H](O)CCC1', '(1R,3R)-cyclohexane-1,2,3-triol']
 ];
 
 const out = [];

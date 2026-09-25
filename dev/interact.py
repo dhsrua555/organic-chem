@@ -20,12 +20,15 @@ with sync_playwright() as pw:
     name = lambda: p.inner_text('.name-main')
     ch = lambda: p.inner_text('.changes ul').replace('\n', ' | ') if p.query_selector('.changes ul') else '-'
     smi = lambda: p.inner_text('.stage-foot .smi')
+    def chip(g):  # 조각은 무리별 탭 안에 있다: 그 탭을 먼저 연다
+        p.evaluate("g => { const c = document.querySelector('.chip[data-g=\"' + g + '\"]'); const t = document.querySelector('#tb-pal-' + c.closest('.tab-panel').dataset.panel); if (t) t.click(); }", g)
+        p.click(f'.chip[data-g="{g}"]')
     print('start:', name(), smi())
     # 프로펜(C=CC): 원자 2(C3)에 OH
-    p.click('.chip[data-g="OH"]'); p.click('.svgwrap [data-atom="2"]'); time.sleep(0.4)
+    chip('OH'); p.click('.svgwrap [data-atom="2"]'); time.sleep(0.4)
     print('C3+OH:', name(), '|', ch())
     # 사슬 늘리기: C1 쪽 끝에 탄소 3개 이어 붙이기
-    p.click('.chip[data-g="CH3"]')
+    chip('CH3')
     for k in range(3):
         n = p.evaluate("document.querySelectorAll('.svgwrap [data-atom]').length")
         target = 0 if k == 0 else n - 1
@@ -51,7 +54,7 @@ with sync_playwright() as pw:
     p.screenshot(path=str(OUT / 'act_build1.png'))
     # 사이클로헥세인 + 페닐
     p.click('.scaf[data-t="cyclohexane"]'); time.sleep(0.3)
-    p.click('.tool[data-tool="add"]'); p.click('.chip[data-g="phenyl"]'); p.click('.svgwrap [data-atom="0"]'); time.sleep(0.4)
+    p.click('.tool[data-tool="add"]'); chip('phenyl'); p.click('.svgwrap [data-atom="0"]'); time.sleep(0.4)
     print('cyclohexylbenzene:', name())
     # 유명한 분자
     p.click('.famous summary'); p.click('.fam-list [data-t="capsaicin"]'); time.sleep(0.6)
@@ -68,7 +71,7 @@ with sync_playwright() as pw:
     print('rapid 10 clicks → long tasks (ms):', p.evaluate('window.__lt'))
     # R/S: 뷰테인 C2 에 OH → 입체중심, R/S 도구로 뒤집기
     p.click('.scaf[data-t="butane"]'); time.sleep(0.3)
-    p.click('.tool[data-tool="add"]'); p.click('.chip[data-g="OH"]'); p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
+    p.click('.tool[data-tool="add"]'); chip('OH'); p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
     print('butan-2-ol:', name(), '| changes:', ch())
     print('  wedge drawn:', p.evaluate("document.querySelectorAll('.svgwrap .m-w, .svgwrap .m-h').length"), '| R/S label:', p.evaluate("[...document.querySelectorAll('.svgwrap .m-rs')].map(t => t.textContent)"))
     print('  rs card:', p.inner_text('.rs-card .rs-one').replace('\n', ' / ')[:260] if p.query_selector('.rs-card .rs-one') else 'NONE')
@@ -79,7 +82,7 @@ with sync_playwright() as pw:
     p.screenshot(path=str(OUT / 'act_rs.png'))
     p.click('.svgwrap [data-atom="0"]'); time.sleep(0.3); print('  not a center →', p.inner_text('.pal-info')[:60])
     # 메소: 뷰테인-2,3-다이올
-    p.click('.tool[data-tool="add"]'); p.click('.chip[data-g="OH"]'); p.click('.svgwrap [data-atom="2"]'); time.sleep(0.4)
+    p.click('.tool[data-tool="add"]'); chip('OH'); p.click('.svgwrap [data-atom="2"]'); time.sleep(0.4)
     print('diol:', name(), '| mirror/meso:', p.inner_text('.rs-card').split('\n')[-1][:90])
     if p.query_selector('#b-mirror'): p.click('#b-mirror'); time.sleep(0.3); print('  mirror →', name())
     p.click('.tool[data-tool="rs"]'); p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
@@ -96,7 +99,7 @@ with sync_playwright() as pw:
     p.click('.lang button[data-lang="en"]'); time.sleep(0.3)
     # 3D 보기: 가운데를 누르면 캔버스가 받아야 한다
     p.click('.scaf[data-t="benzene"]'); time.sleep(0.2)
-    p.click('.chip[data-g="COOH"]'); p.click('.svgwrap [data-atom="0"]'); time.sleep(0.3)
+    chip('COOH'); p.click('.svgwrap [data-atom="0"]'); time.sleep(0.3)
     p.click('#b-3d'); time.sleep(2.5)
     hit = p.evaluate("(() => { const e = document.elementFromPoint(720, 420); return e ? (e.id || e.className || e.tagName) : null })()")
     print('3D: element at center =', hit)
@@ -110,6 +113,23 @@ with sync_playwright() as pw:
     p.click('#z-h'); time.sleep(0.8); p.screenshot(path=str(OUT / 'act_3d_noh.png')); p.click('#z-h')
     p.keyboard.press('Escape'); time.sleep(0.5)
     print('focus3d off:', p.evaluate('document.body.classList.contains("focus3d")'))
+    # 결과 탭: 비교 목록은 탭을 열어야 채워진다
+    p.click('#tb-build-cmp'); time.sleep(0.6)
+    print('tab cmp rows:', p.evaluate("document.querySelectorAll('.cmp-list li').length"), '| steps hidden:', p.evaluate("document.querySelector('#tp-build-steps').hidden"))
+    p.click('#tb-build-steps'); time.sleep(0.2)
+    # 버그 제보함
+    p.click('#bug-btn'); time.sleep(0.3)
+    print('bug dialog open:', p.evaluate("document.querySelector('.bug-dlg').open"))
+    p.fill('#bug-body', '시험 제보: 이름 확인'); p.click('[data-send="copy"]'); time.sleep(0.3)
+    print('  copy msg:', p.inner_text('.bug-msg'))
+    print('  ctx:', p.inner_text('.bug-ctx pre').splitlines()[:4])
+    p.evaluate("window.open = u => { window.__gh = u; return {}; }")
+    p.click('[data-send="gh"]'); time.sleep(0.2)
+    gh = p.evaluate('window.__gh') or ''
+    print('  gh url ok:', gh.startswith('https://github.com/dhsrua555/organic-chem/issues/new?'), len(gh), '| cm hidden:', p.evaluate("document.querySelector('[data-send=\"cm\"]').hidden"))
+    p.screenshot(path=str(OUT / 'act_bug.png'))
+    p.click('.bug-x'); time.sleep(0.2)
+    print('  closed:', not p.evaluate("document.querySelector('.bug-dlg').open"))
     # 반응 예측으로
     p.click('#b-react'); time.sleep(1.5)
     print('react route:', p.evaluate('location.hash'), '| sub:', p.inner_text('.rx-subname').replace('\n', ' / '))
@@ -164,6 +184,7 @@ with sync_playwright() as pw:
     # 도감 → 조립
     p.goto(URL + '#groups-ester'); time.sleep(2)
     print('groups title:', p.inner_text('.g-hero .title'))
+    p.click('#tb-grp-attach'); time.sleep(0.2)
     p.click('[data-row="3"]'); time.sleep(1)
     print('from groups →', p.evaluate('location.hash'), name())
     # 명명법

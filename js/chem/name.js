@@ -5,7 +5,7 @@
    결과: 영어 · 한글 토큰(역할별 색칠), 모체 · 번호 · 접두사 정보, 풀이에 쓰는 근거. */
 import { rings as ringsOf, isBenzene, bondBetween, HALOGENS } from './core.js';
 import { doubleBondStereo, stereogenicDB } from './cip.js';
-import { stereoInfo, mirror, cisTrans } from './stereo.js';
+import { stereoInfo, mirror, cisTrans, ringSites } from './stereo.js';
 
 export const PRI = { acid: 1, ester: 2, acylhalide: 3, amide: 4, nitrile: 5, aldehyde: 6, ketone: 7, alcohol: 8, amine: 9 };
 export const CLASS = {
@@ -129,15 +129,21 @@ function classesPresent(C) {
 function topClass(set) { let P = null; for (const c of set) if (!P || PRI[c] < PRI[P]) P = c; return P; }
 
 /* ── 고리 종류 ─────────────────────────────────── */
+/* 산소 하나가 든 포화 고리 (한치–비드만 이름): 크기 → [이름, 한글, 모음 앞 줄기, 한글 줄기] */
+const OXA = { 3: ['oxirane', '옥시레인', 'oxiran', '옥시란'], 4: ['oxetane', '옥세테인', 'oxetan', '옥세탄'], 5: ['oxolane', '옥솔레인', 'oxolan', '옥솔란'], 6: ['oxane', '옥세인', 'oxan', '옥산'], 7: ['oxepane', '옥세페인', 'oxepan', '옥세판'], 8: ['oxocane', '옥소케인', 'oxocan', '옥소칸'] };
+const isOxa = t => t === 'oxa';
 function ringTypes(mol, R) {
+  const inBi = new Set((R.bicyclic || []).flatMap(b => b.atoms));
   return R.list.map(r => {
+    if (r.every(a => inBi.has(a))) return 'bi';
     if (isBenzene(mol, r)) return 'benzene';
     const els = r.map(i => mol.atoms[i].el);
     if (els.every(e => e === 'C')) {
       if (r.length < 3 || r.length > 8) throw new NameError('고리 크기 3~8 만 다룹니다');
       return 'cyclo';
     }
-    if (r.length === 3 && els.filter(e => e === 'O').length === 1 && els.filter(e => e === 'C').length === 2) return 'oxirane';
+    const saturated = r.every((a, k) => { const b = bondBetween(mol, a, r[(k + 1) % r.length]); return b && b.o === 1 && !b.arom; });
+    if (OXA[r.length] && saturated && els.filter(e => e === 'O').length === 1 && els.filter(e => e === 'C').length === r.length - 1) return 'oxa';
     throw new NameError('이 헤테로고리는 아직 이름을 짓지 못합니다');
   });
 }
@@ -407,7 +413,8 @@ function ringSub(C, r, from, bo) {
   const yl = bo === 2 ? 'ylidene' : 'yl', ylKo = bo === 2 ? '일리덴' : '일';
   let en, ko, base = null, baseKo = null;
   if (type === 'benzene') { if (bo !== 1) throw new NameError('벤젠 고리에 이중결합으로 붙은 구조'); en = 'phenyl'; ko = '페닐'; base = 'phenyl'; baseKo = '페닐'; }
-  else if (type === 'oxirane') { en = `oxiran-${rs.locOf(r)}-${yl}`; ko = `옥시레인-${rs.locOf(r)}-${ylKo}`; }
+  else if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 아직 이름을 짓지 못합니다');
+  else if (isOxa(type)) { const O = OXA[rs.ring.length]; en = `${O[2]}-${rs.locOf(r)}-${yl}`; ko = `${O[3]}-${rs.locOf(r)}-${ylKo}`; }
   else {
     const m = rs.ring.length;
     if (!rs.enes.length) { en = 'cyclo' + STEM[m] + yl; ko = '사이클로' + KO_YL[m] + (bo === 2 ? '리덴' : ''); base = en; baseKo = ko; }
@@ -422,7 +429,8 @@ function ringSubCore(C, r, from) {
   const ri = C.R.of[r], ring = C.R.list[ri], type = C.types[ri], m = ring.length;
   let best = null;
   const skip = new Set([from]);
-  const starts = type === 'oxirane' ? [ring.findIndex(i => C.mol.atoms[i].el === 'O')] : [ring.indexOf(r)];
+  if (type === 'bi') throw new NameError('바이사이클로 고리가 곁가지인 구조는 아직 이름을 짓지 못합니다');
+  const starts = isOxa(type) ? [ring.findIndex(i => C.mol.atoms[i].el === 'O')] : [ring.indexOf(r)];
   for (const s of starts) for (const d of [1, -1]) {
     const pos = new Map();
     for (let k = 0; k < m; k++) pos.set(ring[((s + d * k) % m + m) % m], k + 1);
@@ -440,11 +448,11 @@ function ringSubCore(C, r, from) {
   if (C.rs) for (const [c, d] of C.rs) if (best.pos.has(c)) st.push([best.pos.get(c), d]);
   const stereo = fmtDescs(st, stereoUnits(C, best.pos, from));
   const ct = (C.ct || []).find(x => x.n === 2 && x.atoms.every(a => best.pos.has(a)) && x.atoms.every(a => !(C.rs && C.rs.has(a))));
-  return { ct: ct ? ct.rel : null, ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre, stereo };
+  return { att: r, ct: ct ? ct.rel : null, ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre, stereo };
 }
 function ringWordFor(C, ri, rs, carbo) {
   const type = C.types[ri], m = rs.ring.length;
-  if (type === 'oxirane') return { en: 'oxirane-2-', ko: '옥시레인-2-' };
+  if (isOxa(type)) { const O = OXA[m]; return { en: `${rs.pre}${O[0]}-${rs.locOf(rs.att)}-`, ko: `${rs.preKo}${O[1]}-${rs.locOf(rs.att)}-` }; }
   if (type === 'benzene') return { en: 'benzene', ko: '벤젠' };
   const toks = parentWord(m, rs.enes, [], null, { ring: true });
   let en = rs.pre + toks.map(t => t.en).join(''), ko = rs.preKo + toks.map(t => t.ko).join('');
@@ -584,7 +592,14 @@ function candidates(C) {
   const out = [];
   /* 고리 */
   const assembled = new Set();
+  for (const bi of R.bicyclic || []) {
+    const het = bi.atoms.find(a => A[a].el !== 'C');
+    if (bi.atoms.some(a => A[a].el !== 'C' && A[a].el !== 'O') || bi.atoms.filter(a => A[a].el !== 'C').length > 1) throw new NameError('이 고리계의 헤테로 원자는 아직 이름을 짓지 못합니다');
+    const nD = mol.bonds.filter(b => b.o === 2 && bi.atoms.includes(b.a) && bi.atoms.includes(b.b)).length;
+    out.push({ type: 'vb', bi, het: het === undefined ? null : het, atoms: bi.atoms, size: bi.atoms.length, nRings: 2, cls: het === undefined ? 2 : 3, nMult: nD, nDouble: nD });
+  }
   R.list.forEach((ring, ri) => {
+    if (C.types[ri] === 'bi') return;
     if (C.types[ri] === 'benzene') {
       /* 바이페닐: 곧바로 이어진 두 벤젠 */
       for (const a of ring) for (const { j, o } of mol.nb[a]) {
@@ -598,7 +613,7 @@ function candidates(C) {
     }
     const t = C.types[ri];
     const nD = t === 'benzene' ? 3 : ring.filter((a, k) => bondBetween(mol, a, ring[(k + 1) % ring.length]).o === 2).length;
-    out.push({ type: 'ring', ri, rtype: t, atoms: ring, size: ring.length, nRings: 1, cls: t === 'oxirane' ? 3 : 2, nMult: nD, nDouble: nD });
+    out.push({ type: 'ring', ri, rtype: t, atoms: ring, size: ring.length, nRings: 1, cls: isOxa(t) ? 3 : 2, nMult: nD, nDouble: nD });
   });
   /* 사슬: 고리 밖 탄소 */
   const skel = new Set();
@@ -656,10 +671,24 @@ function numberings(C, cand) {
     if (p.length > 1) out.push(new Map(p.map((c, i) => [c, p.length - i])));
   } else if (cand.type === 'ring') {
     const ring = cand.atoms, m = ring.length;
-    const starts = cand.rtype === 'oxirane' ? [ring.findIndex(i => C.mol.atoms[i].el === 'O')] : ring.map((_, k) => k);
+    const starts = isOxa(cand.rtype) ? [ring.findIndex(i => C.mol.atoms[i].el === 'O')] : ring.map((_, k) => k);
     for (const s of starts) for (const d of [1, -1]) {
       const pos = new Map();
       for (let k = 0; k < m; k++) pos.set(ring[((s + d * k) % m + m) % m], k + 1);
+      out.push(pos);
+    }
+  } else if (cand.type === 'vb') {
+    /* 폰 바이어: 주 다리목 = 1, 가장 긴 다리 → 둘째 다리목 → 둘째 다리(돌아오며) → 가장 짧은 다리(1번 쪽부터) */
+    const { bh: [h1, h2], bridges } = cand.bi;
+    const perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]].filter(o => bridges[o[0]].length >= bridges[o[1]].length && bridges[o[1]].length >= bridges[o[2]].length);
+    for (const [m, n] of [[h1, h2], [h2, h1]]) for (const o of perms) {
+      const pos = new Map([[m, 1]]);
+      let k = 2;
+      const fromM = path => m === h1 ? path : path.slice().reverse();
+      for (const a of fromM(bridges[o[0]])) pos.set(a, k++);
+      pos.set(n, k++);
+      for (const a of fromM(bridges[o[1]]).slice().reverse()) pos.set(a, k++);
+      for (const a of fromM(bridges[o[2]])) pos.set(a, k++);
       out.push(pos);
     }
   } else {
@@ -679,6 +708,15 @@ function evaluate(C, cand, pos) {
   let enes = [], ynes = [];
   if (cand.type === 'chain') ({ enes, ynes } = unsatOn(C.mol, cand.atoms, pos));
   else if (cand.type === 'ring' && cand.rtype === 'cyclo') enes = ringEnes(C.mol, cand.atoms, pos);
+  else if (cand.type === 'vb') {
+    for (const b of C.mol.bonds) {
+      if (b.o !== 2 || !pos.has(b.a) || !pos.has(b.b)) continue;
+      const la = pos.get(b.a), lb = pos.get(b.b);
+      if (Math.abs(la - lb) !== 1) throw new NameError('다리목에 걸친 이중결합은 아직 이름을 짓지 못합니다');
+      enes.push(Math.min(la, lb));
+    }
+    enes.sort((x, y) => x - y);
+  }
   /* N-치환기 번호 (N, N′, N″): 주 작용기의 번호 순서대로 */
   const tags = new Map(), nList = [];
   const hostLoc = x => { let l = 1e9; for (const { j } of C.mol.nb[x]) if (pos.has(j)) l = Math.min(l, pos.get(j)); return l; };
@@ -691,12 +729,13 @@ function evaluate(C, cand, pos) {
   const rec = { alkyls: [], halides: [], nTag: n => tags.get(n) || 'N' };
   const pre = prefixesOn(C, cand.atoms, pos, { P: C.P, suffix: cand.suffix, carbo: cand.carbo, rec });
   const descs = parentStereo(C, pos);
-  const zL = descs.filter(x => x.d === 'Z').map(x => x.l), rL = descs.filter(x => x.d === 'R').map(x => x.l);
-  return { cand, pos, pLocs, enes, ynes, mult: [...enes, ...ynes].sort((a, b) => a - b), pre, rec, descs, zL, rL };
+  const zL = descs.filter(x => x.d === 'Z').map(x => x.l), rL = descs.filter(x => x.d === 'R').map(x => x.l), rrL = descs.filter(x => x.d === 'r').map(x => x.l);
+  const het = cand.type === 'vb' && cand.het !== null ? [pos.get(cand.het)] : [];
+  return { cand, pos, pLocs, enes, ynes, mult: [...enes, ...ynes].sort((a, b) => a - b), pre, rec, descs, zL, rL, rrL, het };
 }
 /* 모체에 붙는 입체 표시: 모체 안 · 모체에서 뻗은 이중결합의 E/Z, 모체 원자의 R/S. [{ l(번호), d }] 번호 순 */
 function parentStereo(C, pos) {
-  const inParent = C.db.filter(d => pos.has(d.a) && pos.has(d.b) && !(C.R.of[d.a] >= 0 && C.R.of[d.a] === C.R.of[d.b]));
+  const inParent = C.db.filter(d => pos.has(d.a) && pos.has(d.b) && !C.R.same(d.a, d.b));
   const exo = C.db.filter(d => (pos.has(d.a) !== pos.has(d.b)));
   const descs = inParent.map(d => ({ l: Math.min(pos.get(d.a), pos.get(d.b)), d: d.desc })).concat(exo.map(d => ({ l: pos.get(pos.has(d.a) ? d.a : d.b), d: d.desc })));
   if (C.rs) for (const [c, d] of C.rs) if (pos.has(c)) descs.push({ l: pos.get(c), d });
@@ -722,11 +761,13 @@ function cmpCandLite(a, b, rule) {
 }
 function cmpEval(a, b) {
   const order = [
+    /* 폰 바이어 고리의 헤테로 원자가 먼저 가장 작은 번호 */
+    ['het', x => x.het, true],
     ['pLoc', x => x.pLocs, true], ['multLoc', x => x.mult, true], ['dblLoc', x => x.enes, true],
     ['nPre', x => -x.pre.length, false], ['preLoc', x => sortedLocs(x.pre), true], ['alpha', x => alphaLocs(x.pre), true],
     ['esterAlpha', x => x.rec.alkyls.slice().sort((p, q) => p.key < q.key ? -1 : p.key > q.key ? 1 : p.loc - q.loc).map(a => a.loc), true],
     /* 그래도 같으면: Z 에, 그다음 R 에 작은 번호 (IUPAC 2013 P-31.1.4.3.4) */
-    ['stereoZ', x => x.zL, true], ['stereoR', x => x.rL, true]
+    ['stereoZ', x => x.zL, true], ['stereoR', x => x.rL, true], ['stereoRr', x => x.rrL, true]
   ];
   for (const [k, f, list] of order) { const d = list ? cmpList(f(a), f(b)) : f(a) - f(b); if (d) return [d, k]; }
   return [0, null];
@@ -765,13 +806,18 @@ export function nameMolecule(mol, opts = {}) {
   const rule = opts.rule || '2013';
   checkSupported(mol);
   const { info, R } = analyze(mol);
-  if (R.fused) throw new NameError('고리가 서로 붙은(축합) 구조는 아직 이름을 짓지 못합니다');
+  if (R.fused && R.list.some((r, i) => R.list.some((q, j) => j !== i && q.some(a => r.includes(a))) && !R.bicyclic.some(b => r.every(a => b.atoms.includes(a))))) throw new NameError('고리가 셋 이상 붙거나 한 원자를 나눠 갖는(스파이로) 구조는 아직 이름을 짓지 못합니다');
   if (!mol.atoms.some(a => a.el === 'C')) throw new NameError('탄소가 없는 분자');
   if (mol.atoms.some(a => a.q && !(a.el === 'N' && a.q === 1) && !(a.el === 'O' && a.q === -1))) throw new NameError('이온은 이름을 짓지 않습니다');
   const C = { mol, info, R, types: ringTypes(mol, R), memo: new Map(), rule };
   C.db = doubleBondStereo(mol);
   const SI = stereoInfo(mol);
-  C.rs = SI.rs; C.centers = SI.centers;
+  C.rs = SI.all; C.centers = SI.centers;
+  /* 두 고리 계 안에서 R/S 가 아닌 배치(exo · endo, syn · anti)가 정해진 자리는 아직 이름에 담지 못한다 */
+  for (const bi of R.bicyclic || []) for (const a of bi.atoms) {
+    if (bi.bh.includes(a) || !mol.atoms[a].chi || SI.all.has(a) || SI.same.has(a) || mol.atoms[a].h !== 1) continue;
+    if (mol.nb[a].filter(n => !bi.atoms.includes(n.j)).length === 1) throw new NameError('두 고리 계 안의 이 입체 배치(exo · endo 나 syn · anti)는 아직 이름에 담지 못합니다');
+  }
   C.ct = cisTrans(mol);
   C.present = classesPresent(C);
   C.P = topClass(C.present);
@@ -819,11 +865,14 @@ export function nameMolecule(mol, opts = {}) {
   const res = assemble(C, best);
   Object.assign(res, { why: { chain: chainWhy, num: numWhy }, present: C.present, info, rule, db: C.db });
   res.centers = SI.centers;
-  res.rs = SI.rs; res.undef = SI.undef; res.ct = C.ct;
+  res.rs = SI.rs; res.pseudo = SI.pseudo; res.undef = SI.undef; res.ct = C.ct;
+  /* 치환된 자리가 셋 이상인 고리에서 R/S · r/s 로 나타나지 않는 자리(예: 1,3,5-트라이메틸사이클로헥세인)는 이름에 담지 못한다 → 안내 */
+  res.siteMissing = [];
+  for (const list of ringSites(mol).values()) if (list.length >= 3) for (const a of list) if (mol.atoms[a].chi && !SI.all.has(a) && !SI.same.has(a)) res.siteMissing.push(a);
   res.principalAtoms = principalAtoms(C, best);
   /* 이름에 들어가지 못한 R/S (곁가지의 곁가지 등) */
-  const cited = (res.nameEn.match(/(?:^|[(,])\d*′*[RS](?=[,)])/g) || []).length;
-  res.rsMissing = Math.max(0, SI.rs.size - cited);
+  const cited = (res.nameEn.match(/(?:^|[(,])\d*′*[RSrs](?=[,)])/g) || []).length;
+  res.rsMissing = Math.max(0, SI.all.size - cited);
   /* 거울상의 이름 (같으면 메소) */
   if (!opts.noCompare && SI.rs.size) {
     try {
@@ -850,7 +899,7 @@ function assemble(C, e) {
   const numericPre = pre.filter(p => typeof p.loc === 'number');
   const nSubst = k + numericPre.length;
   const toks = [];
-  let alkyl = null, tail = null, kind = cand.type === 'chain' ? 'chain' : cand.type === 'biphenyl' ? 'biphenyl' : cand.rtype === 'benzene' ? 'benzene' : 'ring';
+  let alkyl = null, tail = null, kind = cand.type === 'chain' ? 'chain' : cand.type === 'biphenyl' ? 'biphenyl' : cand.type === 'vb' ? 'ring' : cand.rtype === 'benzene' ? 'benzene' : 'ring';
   let noLocs = false;
   const place = cand.type === 'chain' ? (C.tri && ACYL.has(P) ? 'carbo' : 'chain') : (ACYL.has(P) ? 'carbo' : 'ring');
   const halide = rec.halides[0];
@@ -892,11 +941,22 @@ function assemble(C, e) {
       toks.push(T('benzene', '벤젠', 'par'), T('-', '-', 'pun'), T(lc, lc, 'loc'), T('-', '-', 'pun'), T(suf.en, suf.ko, 'suf'));
     }
     e.groups = g.groups;
-  } else if (cand.rtype === 'oxirane') {
+  } else if (cand.type === 'vb') {
+    /* 바이사이클로[a.b.c]알케인 · 옥사바이사이클로 */
+    const [a, b, c] = cand.bi.bridges.map(x => x.length).sort((x, y) => y - x);
     const g = groupPrefixes(pre, false);
     toks.push(...g.toks);
-    if (P) { const lc = pLocs.join(','); toks.push(T('oxirane', '옥시레인', 'par'), T('-', '-', 'pun'), T(lc, lc, 'loc'), T('-', '-', 'pun'), T(suf.en, suf.ko, 'suf')); }
-    else toks.push(T('oxirane', '옥시레인', 'par'));
+    if (cand.het !== null) { const hl = String(pos.get(cand.het)); if (g.toks.length) toks.push(T('-', '-', 'pun')); toks.push(T(hl, hl, 'loc'), T('-', '-', 'pun'), T('oxa', '옥사', 'par')); }
+    toks.push(T(`bicyclo[${a}.${b}.${c}]`, `바이사이클로[${a}.${b}.${c}]`, 'par'));
+    if (suf) suf = { ...suf, locs: pLocs };
+    toks.push(...parentWord(cand.size, enes, [], suf, {}));
+    e.groups = g.groups;
+  } else if (cand.type === 'ring' && isOxa(cand.rtype)) {
+    const O = OXA[cand.size];
+    const g = groupPrefixes(pre, false);
+    toks.push(...g.toks);
+    if (P) { const lc = pLocs.join(','); const v = suf.vowel || /^[aeiou]/.test(suf.en); toks.push(T(v ? O[2] : O[0], v ? O[3] : O[1], 'par'), T('-', '-', 'pun'), T(lc, lc, 'loc'), T('-', '-', 'pun'), T(suf.en, suf.ko, 'suf')); }
+    else toks.push(T(O[0], O[1], 'par'));
     e.groups = g.groups;
   } else {
     const m = cand.size;

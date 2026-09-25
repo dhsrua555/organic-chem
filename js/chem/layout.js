@@ -12,7 +12,7 @@ export function stereoFromCoords(mol) {
   const R = rings(mol);
   mol.bonds.forEach(b => {
     if (b.o !== 2 || b.arom) return;
-    if (R.of[b.a] >= 0 && R.of[b.a] === R.of[b.b]) return;
+    if (R.same(b.a, b.b)) return;
     const x = mol.nb[b.a].find(n => n.j !== b.b), y = mol.nb[b.b].find(n => n.j !== b.a);
     if (!x || !y) return;
     const s1 = side(mol, b.a, b.b, x.j), s2 = side(mol, b.a, b.b, y.j);
@@ -44,7 +44,7 @@ export function layout(mol, opts = {}) {
     if (depthMemo.has(k)) return depthMemo.get(k);
     depthMemo.set(k, 0);
     let d = 0;
-    for (const { j } of mol.nb[i]) if (j !== from && !(R.of[i] >= 0 && R.of[i] === R.of[j])) d = Math.max(d, depth(j, i));
+    for (const { j } of mol.nb[i]) if (j !== from && !R.same(i, j)) d = Math.max(d, depth(j, i));
     const v = d + (R.of[i] >= 0 ? R.list[R.of[i]].length : 1);
     depthMemo.set(k, v);
     return v;
@@ -70,9 +70,9 @@ export function layout(mol, opts = {}) {
       kids.sort((p, q) => depth(q, A) - depth(p, A));
       let dirs;
       if (R.of[A] >= 0) {
-        /* 고리 원자의 바깥쪽 치환기 */
-        const ring = R.list[R.of[A]];
-        const c = centroid(ring.map(i => pos[i]));
+        /* 고리 원자의 바깥쪽 치환기 (두 고리에 걸친 원자는 두 고리 중심의 평균에서 바깥쪽) */
+        const cs = R.list.filter(r => r.includes(A) && r.every(i => pos[i])).map(r => centroid(r.map(i => pos[i])));
+        const c = cs.length ? centroid(cs) : centroid(R.list[R.of[A]].filter(i => pos[i]).map(i => pos[i]));
         const phi = ang(c, pos[A]);
         dirs = kids.length === 1 ? [phi] : [phi + 35, phi - 35];
       } else if (!parentN.length || A === root && R.of[A] < 0 && parentN.length === 0) {
@@ -90,6 +90,9 @@ export function layout(mol, opts = {}) {
       kids.forEach((j, i) => {
         const d = dirs[Math.min(i, dirs.length - 1)] + (i >= dirs.length ? 25 * i : 0);
         if (pos[j]) return;
+        /* 이미 놓인 고리와 결합 하나를 나눠 갖는 고리(축합): 그 결합 위에 바깥쪽으로 정다각형 */
+        const fr = R.list.findIndex((r, ri) => !placedRing.has(ri) && r.includes(j) && r.includes(A) && r.some(x => x !== A && pos[x]));
+        if (fr >= 0 && placeFused(fr)) return;
         if (R.of[j] >= 0 && !placedRing.has(R.of[j])) {
           const v = dirv(d);
           const p = [pos[A][0] + v[0], pos[A][1] + v[1]];
@@ -130,6 +133,31 @@ export function layout(mol, opts = {}) {
         pos[atom] = best[k];
       }
       ring.forEach(a => queue.push(a));
+    }
+    function placeFused(ri) {
+      const ring = R.list[ri], m = ring.length;
+      let k0 = -1;
+      for (let k = 0; k < m; k++) if (pos[ring[k]] && pos[ring[(k + 1) % m]]) { k0 = k; break; }
+      if (k0 < 0) return false;
+      placedRing.add(ri);
+      const u = ring[k0], v = ring[(k0 + 1) % m], U = pos[u], V = pos[v];
+      const other = R.list.find((r, i) => i !== ri && placedRing.has(i) && r.includes(u) && r.includes(v));
+      const oc = other ? centroid(other.map(x => pos[x])) : null;
+      const mid = [(U[0] + V[0]) / 2, (U[1] + V[1]) / 2];
+      const ex = V[0] - U[0], ey = V[1] - U[1], L = Math.hypot(ex, ey) || 1;
+      let nx = -ey / L, ny = ex / L;
+      if (oc && (oc[0] - mid[0]) * nx + (oc[1] - mid[1]) * ny > 0) { nx = -nx; ny = -ny; }
+      const rr = L / (2 * Math.sin(Math.PI / m)), hh = L / (2 * Math.tan(Math.PI / m));
+      const c = [mid[0] + nx * hh, mid[1] + ny * hh];
+      const au = Math.atan2(U[1] - c[1], U[0] - c[0]), av = Math.atan2(V[1] - c[1], V[0] - c[0]);
+      let step = av - au;
+      step = ((step + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+      for (let t = 2; t < m; t++) {
+        const a = ring[(k0 + t) % m], an = av + step * (t - 1);
+        if (!pos[a]) pos[a] = [c[0] + Math.cos(an) * rr, c[1] + Math.sin(an) * rr];
+      }
+      ring.forEach(a => queue.push(a));
+      return true;
     }
     /* 조각마다 옆으로 띄운다 */
     const xs = comp.map(i => pos[i][0]);
@@ -236,7 +264,7 @@ function untangle(mol, R, stereo, linear) {
   for (let pass = 0; pass < 4 && score > 1e-6; pass++) {
     for (let k = 0; k < mol.bonds.length && score > 1e-6; k++) {
       const b = mol.bonds[k];
-      if (b.o !== 1 || (R.of[b.a] >= 0 && R.of[b.a] === R.of[b.b])) continue;
+      if (b.o !== 1 || R.same(b.a, b.b)) continue;
       for (const [u, v] of [[b.a, b.b], [b.b, b.a]]) {
         const side = branch(mol, v, u);
         if (side.size > mol.atoms.length / 2 + 0.5) continue;

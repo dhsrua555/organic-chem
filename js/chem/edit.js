@@ -104,7 +104,7 @@ export function cycleBond(mol, k) {
   if (b.arom) return { error: '벤젠 고리의 결합은 바꾸지 않습니다' };
   if (mol.atoms[b.a].el !== 'C' || mol.atoms[b.b].el !== 'C') return { error: '탄소–탄소 결합만 이중 · 삼중으로 바꿀 수 있습니다 (C=O 는 =O 조각으로)' };
   const R = rings(mol);
-  const inRing = R.of[b.a] >= 0 && R.of[b.a] === R.of[b.b];
+  const inRing = R.same(b.a, b.b);
   const A = mol.atoms[b.a], B = mol.atoms[b.b];
   if (A.q || B.q) return { error: '전하를 띤 원자의 결합은 바꾸지 않습니다' };
   const stereo = stereoFromCoords(mol);

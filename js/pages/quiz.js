@@ -5,6 +5,7 @@ import { steps } from '../chem/explain.js';
 import { REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { drawMolecule } from '../draw.js';
 import { defineMissing, flipCenter, stereoInfo, stereoSites } from '../chem/stereo.js';
+import { toSmiles } from '../chem/core.js';
 import { centerHTML } from '../rsview.js';
 import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
 
@@ -252,5 +253,12 @@ export function mount(root, app, params) {
   root.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { S.level = b.dataset.level; store.set('quizLevel', S.level); paintBar(); next(); }));
   const off = onLang(() => draw());
   paintBar(); next();
-  return { unmount() { off(); } };
+  return {
+    unmount() { off(); },
+    report: () => {
+      const q = S.q; if (!q) return { '퀴즈': S.mode };
+      const e = q.e || q.sub;
+      return { '퀴즈': `${S.mode} · ${S.level}`, '문제 분자 SMILES': e && e.mol ? toSmiles(e.mol) : '', '정답': q.answer || (e && e.res ? e.res.nameEn : ''), '고른 답': S.chosen ? (S.chosen.k || (S.chosen.e && S.chosen.e.res && S.chosen.e.res.nameEn) || S.chosen.label || '') : '(아직)' };
+    }
+  };
 }

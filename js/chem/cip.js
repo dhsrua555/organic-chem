@@ -88,25 +88,38 @@ export function rankBranches(mol, c) {
 }
 /* 입체중심: sp3 탄소, 치환기 넷이 모두 다름. 같은 분자(구조가 그대로면)는 다시 계산하지 않는다 */
 const SC = new WeakMap();
-export function stereocenters(mol) {
+function scCache(mol) {
   const sig = mol.atoms.map(a => a.el + a.h).join() + '|' + mol.bonds.map(b => b.a + '-' + b.b + ':' + b.o).join();
   const hit = SC.get(mol);
-  if (hit && hit.sig === sig) return hit.list.slice();
-  const list = stereocentersRaw(mol);
-  SC.set(mol, { sig, list });
-  return list.slice();
+  if (hit && hit.sig === sig) return hit;
+  const v = { sig, ...stereocentersRaw(mol) };
+  SC.set(mol, v);
+  return v;
 }
+export function stereocenters(mol) { return scCache(mol).list.slice(); }
+/* 구조가 똑같은 가지 한 쌍 + 서로 다른 두 가지를 가진 sp³ 탄소 중, 그 두 가지 안에 입체중심이 있는 것.
+   두 가지의 R/S 가 거울상이면 가짜 비대칭 중심(r/s), 다르면(RR 대 RS 등) 보통 입체중심이 된다. [{ c, pair: [가지 노드 둘] }] */
+export function tiedCenters(mol) { return scCache(mol).tied; }
 function stereocentersRaw(mol) {
-  const out = [];
+  const out = [], tied = [];
   mol.atoms.forEach((a, i) => {
     if (a.el !== 'C' || a.h > 1) return;
     if (mol.nb[i].some(n => n.o > 1)) return;
     const br = branchesOf(mol, i);
     if (br.length !== 4) return;
-    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) if (compareBranch(mol, br[p], br[q]) === 0) return;
-    out.push(i);
+    const pairs = [];
+    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) if (compareBranch(mol, br[p], br[q]) === 0) pairs.push([br[p], br[q]]);
+    if (!pairs.length) out.push(i);
+    else if (pairs.length === 1 && pairs[0][0].atom >= 0) tied.push({ c: i, pair: pairs[0] });
   });
-  return out;
+  const set = new Set(out);
+  /* 가지 안(중심을 지나지 않고)에 입체중심이 있는가 */
+  const reach = (c, s) => {
+    const seen = new Set([c, s]), st = [s];
+    while (st.length) { const i = st.pop(); if (set.has(i)) return true; for (const { j } of mol.nb[i]) if (!seen.has(j)) { seen.add(j); st.push(j); } }
+    return false;
+  };
+  return { list: out, tied: tied.filter(t => reach(t.c, t.pair[0].atom)) };
 }
 
 /* C=C 결합의 E/Z. 반환: [{ a, b, desc: 'E'|'Z' }] (한쪽 치환기가 같으면 빠진다) */

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>반응 전수 점검</title>
+<pre id="out"></pre>
+<script type="module">
+import { parseSmiles, toSmiles } from '../js/chem/core.js';
+import { layout } from '../js/chem/layout.js';
+import { predict, applicable, REACTIONS, CATS } from '../js/chem/reactions.js';
+import { defineMissing } from '../js/chem/stereo.js';
+import { nameMolecule } from '../js/chem/name.js';
+import { EXAMPLES } from '../js/pages/react.js';
+/* 예시 기질 × 모든 시약: 밝게 표시(쓸 수 있음)와 실제 결과가 맞는지, 생성물 이름 오류, 기질 그대로인 생성물 */
+const q = new URLSearchParams(location.search);
+const only = q.get('cat');
+const L = [], M = [];
+const subs = [...new Map(Object.values(EXAMPLES).flat().map(([s, k]) => [s, k])).entries()];
+let n = 0;
+for (const [smi, label] of subs) {
+  let mol = parseSmiles(smi); layout(mol); mol = defineMissing(mol);
+  let subName = ''; try { subName = nameMolecule(mol, { noNotes: true, noCompare: true }).nameEn; } catch (e) { subName = 'ERR'; }
+  const ok = applicable(mol);
+  for (const R of REACTIONS) {
+    if (only && R.cat !== only) continue;
+    n++;
+    let res;
+    try { res = predict(mol, R.id); } catch (e) { M.push(`CRASH ${label} + ${R.id}: ${e.message}`); continue; }
+    const names = res.products.map(p => p.name ? p.name.nameEn : 'ERR:' + p.err);
+    if (ok[R.id] && !res.ok) M.push(`밝은데 반응 없음: ${label} (${smi}) + ${R.id} — ${res.reason}`);
+    if (!ok[R.id] && res.ok) M.push(`흐린데 반응함: ${label} (${smi}) + ${R.id} → ${names.join(', ')}`);
+    for (const p of res.products) if (!p.name && !p.inorg) M.push(`생성물 이름 없음: ${label} + ${R.id}: ${p.err} ${toSmiles(p.mol)}`);
+    if (res.ok && res.products.some(p => p.role === 'major' && p.name && p.name.nameEn === subName) && !res.warn) M.push(`주생성물 = 기질: ${label} + ${R.id}`);
+    if (res.ok && (!only || true)) L.push(`${R.cat.padEnd(5)} ${label} + ${R.id} [${res.mech}] → ${res.products.map(p => `${p.role[0]}:${p.name ? p.name.nameEn : 'ERR'}${p.pct ? ' ' + p.pct + '%' : ''}${p.stereoTag ? ' {' + p.stereoTag + '}' : ''}`).join(' | ')}`);
+  }
+}
+document.getElementById('out').textContent = `${n} 조합\n── 문제 ${M.length}\n${M.join('\n')}\n── 결과\n${L.join('\n')}`;
+window.__done = true;
+</script>

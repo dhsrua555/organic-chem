@@ -88,7 +88,7 @@ export function drawMolecule(mol, res, opts = {}) {
       out.bonds.push(line(x1, y1, x2, y2), line(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o), line(x1 - nx * o, y1 - ny * o, x2 - nx * o, y2 - ny * o));
     } else {
       /* 이중결합: 고리 안이거나 골격식에서 끝 글자가 없으면 안쪽 선 하나 더 */
-      const ringIdx = R.of[b.a] >= 0 && R.of[b.a] === R.of[b.b] ? R.of[b.a] : -1;
+      const ringIdx = R.list.findIndex(r => r.includes(b.a) && r.includes(b.b));
       if (ringIdx >= 0) {
         const ring = R.list[ringIdx];
         const c = ring.reduce((s, i) => [s[0] + A[i].x / ring.length, s[1] + A[i].y / ring.length], [0, 0]);
@@ -153,7 +153,7 @@ export function drawMolecule(mol, res, opts = {}) {
     const a = A[i];
     const dirs = mol.nb[i].map(({ j }) => Math.atan2(A[j].y - a.y, A[j].x - a.x) / RAD);
     if (opts.rsLabels === false && i !== opts.mark) continue;
-    const d = opts.rsLabels === false ? '?' : res.rs && res.rs.get(i);
+    const d = opts.rsLabels === false ? '?' : (res.rs && res.rs.get(i)) || (res.pseudo && res.pseudo.get(i));
     /* 위치 번호가 가장 넓은 빈틈을 쓰므로 R/S 는 둘째 빈틈에 (충분히 넓을 때), 아니면 옆으로 비껴서. 고리 원자는 고리 바깥쪽 빈틈 */
     const f = slotFor(mol, i, dirs, 1);
     const rr = d ? (labels[i] ? 0.62 : 0.46) : 0.42;

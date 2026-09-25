@@ -1,6 +1,9 @@
 /* HEXA 유기화학: 부팅 · 경로(#home #build #groups #rules #quiz) · 메뉴 · 아래 HUD */
 import { $, $$, store, getLang, setLang, mq } from './ui.js';
 import { startFx } from './fx.js';
+import { initReport } from './report.js';
+
+const VERSION = 'v6 · 2026-09-26';
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
 const low = mq('(pointer: coarse)') || Math.min(innerWidth, innerHeight) < 700;
@@ -117,6 +120,9 @@ function paintMotion() {
   if (scene) scene.setMotion(motion);
 }
 motionBtn.addEventListener('click', () => { motion = !motion; store.set('motion', motion); paintMotion(); });
+
+/* ── 버그 제보함: 지금 페이지가 알려 주는 분자 · 반응 정보를 붙인다 ── */
+initReport({ version: VERSION, context: () => Object.assign({ '페이지': '#' + (location.hash.replace('#', '') || 'home') }, current && current.report ? current.report() : {}) });
 
 /* ── 부팅 ─────────────────────── */
 async function boot() {

@@ -163,11 +163,64 @@ export function rings(mol) {
       }
     }
   }
-  const of = new Array(n).fill(-1);
+  let of = new Array(n).fill(-1);
   let fused = false;
   list.forEach((r, ri) => r.forEach(a => { if (of[a] >= 0) fused = true; of[a] = ri; }));
-  mol._rings = { list, of, fused };
+  /* 원자를 나눠 갖는 고리들(고리계)마다: 두 고리짜리(바이사이클로)면 다리 셋으로 가장 작은 두 고리를 다시 만든다 */
+  const bicyclic = [];
+  if (fused) {
+    const sys = ringSystems(list);
+    const out = [];
+    for (const group of sys) {
+      if (group.length === 1) { out.push(group[0]); continue; }
+      const bi = bicycle(mol, [...new Set(group.flat())]);
+      if (bi) { out.push(...bi.rings); bicyclic.push(bi); } else out.push(...group);
+    }
+    list.length = 0; list.push(...out);
+    of = new Array(n).fill(-1);
+    list.forEach((r, ri) => r.forEach(a => { if (of[a] < 0) of[a] = ri; }));
+  }
+  const same = (a, b) => list.some(r => r.includes(a) && r.includes(b));
+  mol._rings = { list, of, fused, bicyclic, same };
   return mol._rings;
+}
+/* 원자를 나눠 갖는 고리끼리 묶기 */
+function ringSystems(list) {
+  const parent = list.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (list[i].some(a => list[j].includes(a))) parent[find(i)] = find(j);
+  const g = new Map();
+  list.forEach((r, i) => { const k = find(i); if (!g.has(k)) g.set(k, []); g.get(k).push(r); });
+  return [...g.values()];
+}
+/* 두 고리 계: 다리목(고리 결합 셋) 두 개와 그 사이 다리 셋. 반환 { atoms, bh: [h1, h2], bridges: [긴 것부터], rings: [큰 고리, 작은 고리] } */
+function bicycle(mol, atoms) {
+  const inSys = new Set(atoms);
+  const deg = a => mol.nb[a].filter(x => inSys.has(x.j)).length;
+  const bh = atoms.filter(a => deg(a) >= 3);
+  if (bh.length !== 2 || bh.some(a => deg(a) !== 3)) return null;
+  const [h1, h2] = bh;
+  const bridges = [];
+  for (const { j } of mol.nb[h1]) {
+    if (!inSys.has(j)) continue;
+    if (j === h2) { bridges.push([]); continue; }
+    const path = [j];
+    let prev = h1, cur = j;
+    for (let guard = 0; cur !== h2 && guard < 60; guard++) {
+      const nx = mol.nb[cur].find(x => inSys.has(x.j) && x.j !== prev);
+      if (!nx) return null;
+      prev = cur; cur = nx.j;
+      if (cur !== h2) path.push(cur);
+    }
+    if (cur !== h2) return null;
+    bridges.push(path);
+  }
+  if (bridges.length !== 3 || bridges.reduce((s, p) => s + p.length, 0) + 2 !== atoms.length) return null;
+  bridges.sort((p, q) => q.length - p.length);
+  const ring = (p, q) => [h1, ...p, h2, ...q.slice().reverse()];
+  /* 가장 작은 두 고리: 가장 짧은 다리와 나머지 둘 각각 */
+  const rings = [ring(bridges[1], bridges[2]), ring(bridges[0], bridges[2])].sort((a, b) => b.length - a.length);
+  return { atoms, bh: [h1, h2], bridges, rings };
 }
 /* 벤젠 고리: 탄소 6개, 단일 · 이중이 번갈아 */
 export function isBenzene(mol, ring) {

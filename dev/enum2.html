@@ -17,7 +17,7 @@ const pick = a => a[Math.floor(rnd() * a.length)];
 const frags = Object.keys(FRAGMENTS);
 const weights = { CH3: 6, C2H5: 2, vinyl: 1, ethynyl: 1, phenyl: 1, cyclohexyl: 1, cyclopropyl: 0.5, OH: 3, oxo: 1.5, OCH3: 1.5, OAc: 1, NH2: 2, NO2: 1, CN: 1, CHO: 1, COCH3: 1, COOH: 1.5, COOCH3: 1, COCl: 0.5, CONH2: 1, F: 1, Cl: 1.5, Br: 1, I: 0.5 };
 const wlist = frags.flatMap(f => Array(Math.round((weights[f] || 1) * 2)).fill(f));
-const bases = TEMPLATES.filter(t => t.kind === 'base');
+const bases = q.get('bases') ? q.get('bases').split(' ').map(smi => ({ smi })) : TEMPLATES.filter(t => t.kind === 'base');
 const lines = [], stats = { ok: 0, err: {} };
 for (let t = 0; t < N; t++) {
   let m = fromSmiles(pick(bases).smi);
@@ -47,12 +47,13 @@ for (let t = 0; t < N; t++) {
   if (RS) {
     m = defineMissing(m);
     for (const c of stereoSites(m)) if (rnd() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
-    rsCol = [...stereoInfo(m).rs].map(([c, d]) => (c + 1) + ':' + d).join(',') + '	' + [...ringSites(m).values()].flat().map(c => c + 1).join(',');
+    rsCol = [...stereoInfo(m).all].map(([c, d]) => (c + 1) + ':' + d).join(',') + '	' + [...ringSites(m).values()].flat().map(c => c + 1).join(',');
   }
   let name;
-  try { name = nameMolecule(m).nameEn; stats.ok++; }
+  let flag = '';
+  try { const r = nameMolecule(m); name = r.nameEn; if (r.siteMissing && r.siteMissing.length) flag = 'M'; stats.ok++; }
   catch (e) { const k = e.name === 'NameError' || e.constructor.name === 'NameError' ? 'NE: ' + e.message : 'CRASH: ' + e.message; stats.err[k] = (stats.err[k] || 0) + 1; name = null; if (k.startsWith('CRASH')) lines.push('#CRASH ' + toSmiles(m) + ' ' + e.stack.split('\n').slice(0, 3).join(' | ')); }
-  if (name) lines.push(toSmiles(m) + '\t' + name + '\t' + molblock(m, RS ? wedges(m) : null).replace(/\n/g, '|') + (RS ? '\t' + rsCol : ''));
+  if (name) lines.push(toSmiles(m) + '\t' + name + '\t' + molblock(m, RS ? wedges(m) : null).replace(/\n/g, '|') + (RS ? '\t' + rsCol + '\t' + flag : ''));
 }
 lines.unshift('#STATS ' + JSON.stringify(stats));
 document.getElementById('out').textContent = lines.join('\n');

@@ -3,7 +3,7 @@
    생성물은 이름 엔진으로 이름을 짓는다 (react-data.js 에 시약 목록과 설명 글). */
 import { clone, parseSmiles, addBond, setOrder, removeAtoms, bondBetween, rings, isBenzene, perceiveAromatic, components, subMol, HALOGENS, chiralOK, cleanChi, orient4, chiSignFor } from './core.js';
 import { layout, stereoFromCoords, branch } from './layout.js';
-import { stereocenters } from './cip.js';
+import { stereoSites } from './stereo.js';
 import { analyze } from './name.js';
 
 /* ── 그래프 도구 ─────────────────────────────── */
@@ -71,13 +71,19 @@ export function finish(m, stereoExtra = []) {
 /* 알켄 첨가의 입체: 이중결합 a=b 의 면 위(+1) · 아래(−1)에서 새 원자가 붙었다고 보고 두 탄소의 배열(chi)을 정한다.
    mol0: 반응 전 분자(좌표), m: 반응 뒤 그래프, faces: { [원자]: ±1 }, addedH: 이번에 H 를 받은 원자 Set, n0: 반응 전 원자 수.
    결과는 한쪽 거울상 하나 — 실제로는 두 면에서 똑같이 일어나므로 라세미(또는 메소) */
-/* 첨가로 새 입체중심이 하나만 생기면 상대 배열이 없으므로 배열을 지운다 (그냥 라세미). 둘 이상이면 남긴다 */
+/* 첨가로 생긴 입체 자리를 이중결합(face 표시)마다 묶는다. 한 이중결합에서 둘 이상 생기면 그 둘의 상대 배열(syn · anti)은 정해진다.
+   자리가 하나뿐인 묶음은 상대 배열이 없으므로 배열을 지우고(그냥 라세미), 둘 이상인 묶음이 여럿이면
+   묶음끼리는 서로 무관하므로(따로 반응) 모두 지운다 → 입체이성질체 혼합물. 반환 { rac: 배열을 남겼나, mixed: 묶음끼리 무관 } */
 export function settleFaces(prod) {
-  const fc = stereocenters(prod).filter(i => prod.atoms[i].face);
-  prod.atoms.forEach((a, i) => { if (a.face) { if (fc.length < 2) delete a.chi; delete a.face; } });
-  return fc.length >= 2;
+  const sites = new Set(stereoSites(prod));
+  const groups = new Map();
+  prod.atoms.forEach((a, i) => { if (a.face && sites.has(i)) { if (!groups.has(a.face)) groups.set(a.face, []); groups.get(a.face).push(i); } });
+  const multi = [...groups.values()].filter(g => g.length >= 2);
+  const keep = new Set(multi.length === 1 ? multi[0] : []);
+  prod.atoms.forEach((a, i) => { if (a.face) { if (!keep.has(i)) delete a.chi; delete a.face; } });
+  return { rac: keep.size >= 2, mixed: groups.size >= 2 };
 }
-export function faceStereo(mol0, m, a, b, faces, addedH, n0) {
+export function faceStereo(mol0, m, a, b, faces, addedH, n0, tag = 1) {
   for (const [c, other] of [[a, b], [b, a]]) {
     const A = mol0.atoms[c];
     if (m.atoms[c].h > 1) continue;
@@ -97,7 +103,7 @@ export function faceStereo(mol0, m, a, b, faces, addedH, n0) {
     const n = nbs.slice(); if (m.atoms[c].h === 1) n.push(-1);
     if (n.length !== 4 || n.some(j => !pos.has(j))) continue;
     const o = orient4(...n.map(j => pos.get(j)));
-    if (o) m.atoms[c] = { ...m.atoms[c], chi: { n, s: o }, face: true };
+    if (o) m.atoms[c] = { ...m.atoms[c], chi: { n, s: o }, face: 'f' + tag };
     void other;
   }
 }
@@ -182,7 +188,7 @@ export function scan(mol) {
   });
   m.bonds.forEach(b => {
     if (b.arom || A[b.a].el !== 'C' || A[b.b].el !== 'C') return;
-    if (b.o === 2) out.alkenes.push({ a: b.a, b: b.b, ring: R.of[b.a] >= 0 && R.of[b.a] === R.of[b.b] });
+    if (b.o === 2) out.alkenes.push({ a: b.a, b: b.b, ring: R.same(b.a, b.b) });
     if (b.o === 3) out.alkynes.push({ a: b.a, b: b.b, terminal: A[b.a].h > 0 || A[b.b].h > 0 });
   });
   info.forEach((f, i) => { if (f && f.kind) out.carbonyls.push({ c: i, kind: f.kind, f }); });
@@ -273,7 +279,7 @@ function ringFace(m, ring, i, g) {
 }
 export function antiE2(mol, c, x, bt) {
   const R = rings(mol);
-  if (R.of[c] >= 0 && R.of[c] === R.of[bt]) {
+  if (R.same(c, bt)) {
     if (mol.atoms[bt].h === 1 && chiralOK(mol, c) && chiralOK(mol, bt)) {
       const ring = R.list[R.of[c]];
       const fx = ringFace(mol, ring, c, x), fh = ringFace(mol, ring, bt, -1);

@@ -64,3 +64,55 @@ export async function copyText(text, node) {
 }
 
 export const mq = s => !!(window.matchMedia && matchMedia(s).matches);
+
+/* ── 보기 탭: 한 번에 한 칸만 펼친다. 고른 탭은 key 마다 기억한다.
+   items: [{ id, label, n(작은 숫자), html }] — 비어 있는 칸은 빠진다. fallback: 기억한 탭이 없을 때 고를 탭 ── */
+export function tabsHTML(key, items, fallback) {
+  const list = items.filter(t => t && t.html);
+  if (!list.length) return '';
+  let sel = store.get('tab:' + key, null);
+  if (!list.some(t => t.id === sel)) sel = list.some(t => t.id === fallback) ? fallback : list[0].id;
+  const bar = `<div class="tab-bar" role="tablist">${list.map(t => `<button type="button" role="tab" id="tb-${key}-${t.id}" aria-controls="tp-${key}-${t.id}" aria-selected="${t.id === sel}" tabindex="${t.id === sel ? 0 : -1}" data-tab="${t.id}">${t.label}${t.n ? `<span class="tab-n">${t.n}</span>` : ''}</button>`).join('')}</div>`;
+  return `<div class="tabs" data-key="${key}">${bar}${list.map(t => `<div class="tab-panel" role="tabpanel" id="tp-${key}-${t.id}" aria-labelledby="tb-${key}-${t.id}" data-panel="${t.id}"${t.id === sel ? '' : ' hidden'}>${t.html}</div>`).join('')}</div>`;
+}
+/* 지금 펼친 탭 (root 안의 key 탭) */
+export function tabNow(root, key) {
+  const b = root.querySelector(`.tabs[data-key="${key}"] > .tab-bar [aria-selected="true"]`);
+  return b ? b.dataset.tab : null;
+}
+function selectTab(btn, focus) {
+  const bar = btn.closest('.tab-bar'), box = bar.parentElement, key = box.dataset.key, id = btn.dataset.tab;
+  bar.querySelectorAll('[data-tab]').forEach(b => { const on = b === btn; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
+  for (const p of box.children) if (p.classList.contains('tab-panel')) p.hidden = p.dataset.panel !== id;
+  store.set('tab:' + key, id);
+  if (focus) btn.focus();
+  box.dispatchEvent(new CustomEvent('tabchange', { bubbles: true, detail: { key, id } }));
+}
+/* 다른 곳의 버튼으로 탭 열기: data-goto="key:id" */
+export function openTab(key, id, scroll) {
+  const b = document.querySelector(`.tabs[data-key="${key}"] > .tab-bar [data-tab="${id}"]`);
+  if (!b) return;
+  selectTab(b);
+  if (scroll) b.closest('.tabs').scrollIntoView({ behavior: mq('(prefers-reduced-motion: reduce)') ? 'auto' : 'smooth', block: 'start' });
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.tab-bar > [data-tab]');
+  if (b) { selectTab(b); return; }
+  const g = e.target.closest('[data-goto]');
+  if (g) { const [key, id] = g.dataset.goto.split(':'); openTab(key, id, true); }
+});
+document.addEventListener('keydown', e => {
+  const b = e.target.closest && e.target.closest('.tab-bar > [data-tab]');
+  if (!b) return;
+  const all = [...b.parentElement.children], i = all.indexOf(b);
+  const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: all.length - 1 }[e.key];
+  if (j === undefined) return;
+  e.preventDefault();
+  selectTab(all[(j + all.length) % all.length], true);
+});
+
+/* 최근 오류 몇 개 (버그 제보에 붙인다) */
+export const recentErrors = [];
+const keepErr = m => { recentErrors.push(String(m).replace(/\s+/g, ' ').slice(0, 300)); if (recentErrors.length > 5) recentErrors.shift(); };
+window.addEventListener('error', e => keepErr((e.message || e.error) + (e.filename ? ` @${e.filename.split('/').pop()}:${e.lineno}` : '')));
+window.addEventListener('unhandledrejection', e => keepErr('promise: ' + ((e.reason && (e.reason.message || e.reason)) || '')));

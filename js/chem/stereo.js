@@ -4,7 +4,7 @@
    그림: 입체 자리마다 결합 하나를 쐐기(앞으로 나옴) 또는 점선 쐐기(뒤로 들어감)로 그린다.
    편집기에서 새로 생긴 입체 자리는 "붙인 쪽이 쐐기(앞)" 인 배열로 정해 두고, R/S 도구로 뒤집는다 */
 import { clone, chiralOK, chiSignFor, rings } from './core.js';
-import { rankBranches, stereocenters, compareBranch } from './cip.js';
+import { rankBranches, stereocenters, compareBranch, tiedCenters, branchesOf } from './cip.js';
 
 const SYM = { 0: '없음', 1: 'H', 5: 'B', 6: 'C', 7: 'N', 8: 'O', 9: 'F', 12: 'Mg', 15: 'P', 16: 'S', 17: 'Cl', 35: 'Br', 53: 'I' };
 export const zSym = z => SYM[z] || '?';
@@ -21,9 +21,12 @@ export function rsOf(mol, c) {
    반환 Map 고리 번호 → [원자] (고리 순서대로) */
 export function ringSites(mol) {
   const R = rings(mol), out = new Map();
+  /* 두 고리 계의 다리목은 고리계가 배치를 정하므로 제외 */
+  const bh = new Set((R.bicyclic || []).flatMap(b => b.bh));
   R.list.forEach((ring, ri) => {
     const sites = ring.filter(i => {
       const a = mol.atoms[i];
+      if (bh.has(i)) return false;
       if (a.el !== 'C' || a.h !== 1 || mol.nb[i].length !== 3) return false;
       if (mol.nb[i].some(n => n.o !== 1 || mol.bonds[n.k].arom)) return false;
       return mol.nb[i].filter(n => !ring.includes(n.j)).length === 1;
@@ -32,10 +35,11 @@ export function ringSites(mol) {
   });
   return out;
 }
-/* 배열을 정해야 하는 자리 전부: 입체중심 + 고리 입체 자리 */
+/* 배열을 정해야 하는 자리 전부: 입체중심 + 고리 입체 자리 + 가짜 비대칭 후보 */
 export function stereoSites(mol) {
   const set = new Set(stereocenters(mol));
   for (const list of ringSites(mol).values()) list.forEach(i => set.add(i));
+  for (const t of tiedCenters(mol)) set.add(t.c);
   return [...set].sort((a, b) => a - b);
 }
 /* 고리 원자 i 의 치환기가 고리의 어느 면(±1)인가: 고리를 적힌 순서로 돌 때의 앞 · 뒤 원자로 잰다 */
@@ -58,12 +62,71 @@ export function cisTrans(mol) {
   }
   return out;
 }
-/* 분자의 입체중심 전부: R/S 가 정해진 것(rs)과 안 정해진 것(undef) */
+/* 가지 하나를 따라가며(계층 그래프: 고리는 되돌아오지 않고 풀어서) 만나는 입체중심의 R/S 를 깊이 순으로. 같은 깊이에 둘 이상이면 null */
+function descSeq(mol, c, start, rs) {
+  const out = [];
+  let front = [{ i: start, up: { i: c, up: null } }], count = 0;
+  const onPath = (x, j) => { for (let y = x; y; y = y.up) if (y.i === j) return true; return false; };
+  for (let d = 1; front.length && d < 40; d++) {
+    const here = [...new Set(front.filter(x => rs.has(x.i)).map(x => x.i))];
+    if (here.length > 1) return null;
+    if (here.length) out.push({ d, v: rs.get(here[0]) });
+    const next = [];
+    for (const x of front) for (const { j } of mol.nb[x.i]) if (!onPath(x, j)) { next.push({ i: j, up: x }); if (++count > 5000) return null; }
+    front = next;
+  }
+  return out;
+}
+/* 구조가 같은 두 가지의 입체 비교 (CIP 규칙 4b: 같은 짝(RR · SS)이 먼저, 규칙 5: R 이 S 보다 먼저).
+   kind: 'same'(똑같음 → 입체 자리 아님) · 'pseudo'(거울상 → r/s) · 'dia'(다름 → R/S). sign > 0 이면 첫째 가지가 높다 */
+function cmpSeq(A, B) {
+  if (!A || !B || !A.length || A.length !== B.length || A.some((x, k) => x.d !== B[k].d)) return null;
+  const a = A.map(x => x.v), b = B.map(x => x.v);
+  if (a.join() === b.join()) return { kind: 'same' };
+  for (let k = 1; k < a.length; k++) { const la = a[k] === a[0], lb = b[k] === b[0]; if (la !== lb) return { kind: 'dia', sign: la ? 1 : -1, rule: 4 }; }
+  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return { kind: 'pseudo', sign: a[k] === 'R' ? 1 : -1, rule: 5 };
+  return null;
+}
+function pseudoOne(mol, t, rs) {
+  const [p, q] = t.pair;
+  const r = cmpSeq(descSeq(mol, t.c, p.atom, rs), descSeq(mol, t.c, q.atom, rs));
+  if (!r || r.kind === 'same') return r;
+  return { ...r, hi: r.sign > 0 ? p : q };
+}
+/* 규칙 1~5 로 매긴 순위 (높은 것 먼저) */
+function rankWith(mol, c, hi) {
+  return branchesOf(mol, c).sort((p, q) => compareBranch(mol, q, p) || (p.atom === hi.atom ? -1 : q.atom === hi.atom ? 1 : 0));
+}
+const trueRS = mol => { const m = new Map(); for (const c of stereocenters(mol)) { const d = rsOf(mol, c); if (d) m.set(c, d); } return m; };
+/* 중심 c 의 순위: 보통 입체중심은 원자번호로, 구조가 같은 두 가지는 규칙 4 · 5 까지. { ranked(노드), rule(같은 가지 쌍을 가른 규칙), kind } */
+export function rankFull(mol, c) {
+  const r = rankBranches(mol, c);
+  if (r) return { ranked: r, rule: 0 };
+  const t = tiedCenters(mol).find(x => x.c === c);
+  if (!t) return null;
+  const x = pseudoOne(mol, t, trueRS(mol));
+  if (!x || x.kind === 'same') return null;
+  return { ranked: rankWith(mol, c, x.hi), rule: x.rule, kind: x.kind };
+}
+/* 분자의 입체중심 전부: R/S 가 정해진 것(rs), 가짜 비대칭 r/s(pseudo), 안 정해진 것(undef).
+   same: 구조가 같은 두 가지가 입체까지 똑같아 입체 자리가 아닌 원자 */
 export function stereoInfo(mol) {
   const centers = stereocenters(mol);
-  const rs = new Map(), undef = [];
+  const rs = new Map(), undef = [], pseudo = new Map(), same = new Set();
   for (const c of centers) { const d = rsOf(mol, c); if (d) rs.set(c, d); else undef.push(c); }
-  return { centers, rs, undef };
+  const base = new Map(rs);
+  for (const t of tiedCenters(mol)) {
+    const x = pseudoOne(mol, t, base);
+    if (!x) continue;
+    if (x.kind === 'same') { same.add(t.c); continue; }
+    centers.push(t.c);
+    const s = chiralOK(mol, t.c) ? chiSignFor(mol.atoms[t.c].chi, rankWith(mol, t.c, x.hi).map(n => n.atom)) : 0;
+    if (!s) undef.push(t.c);
+    else if (x.kind === 'pseudo') pseudo.set(t.c, s > 0 ? 'r' : 's');
+    else rs.set(t.c, s > 0 ? 'R' : 'S');
+  }
+  centers.sort((a, b) => a - b);
+  return { centers, rs, undef, pseudo, same, all: new Map([...rs, ...pseudo]) };
 }
 
 /* 그림용 가짜 3D (중심 = 원점, 결합은 단위 길이): 쐐기 이웃 w 를 앞(z+) 또는 뒤(z−)로, 나머지는 종이 위.
@@ -104,7 +167,7 @@ function chooseWedge(mol, c, n, R, taken, used) {
 }
 /* 쐐기로 그릴 이웃 후보: 고리 밖 · 다른 입체중심이 아닌 · 끝 원자 · 헤테로 원자 순 */
 function candidates(mol, c, R, taken) {
-  const inRing = j => R.of[c] >= 0 && R.of[j] === R.of[c];
+  const inRing = j => R.same(c, j);
   return mol.nb[c].map(({ j }) => ({ j, score: (inRing(j) ? 0 : 100) + (taken.has(j) ? 0 : 50) + (mol.nb[j].length === 1 ? 20 : 0) + (mol.atoms[j].el !== 'C' ? 5 : 0) - mol.nb[j].length }))
     .sort((p, q) => q.score - p.score || p.j - q.j);
 }
@@ -155,12 +218,14 @@ export function mirror(mol) {
 /* 풀이: CIP 순위와 근거, 그림에서 보이는 회전 방향.
    반환 { ranked: [원자 번호(H 는 -1)], why: [{depth, za, zb}] (1↔2, 2↔3, 3↔4), rs, view: { lowest: 'back'|'front'|'plane', turn: 'cw'|'ccw' } } */
 export function cipDetail(mol, c, wedgeMap) {
-  const r = rankBranches(mol, c);
-  if (!r) return null;
+  const F = rankFull(mol, c);
+  if (!F) return null;
+  const r = F.ranked;
   const why = [];
-  for (let k = 0; k < 3; k++) { const w = {}; compareBranch(mol, r[k], r[k + 1], w); why.push(w); }
+  for (let k = 0; k < 3; k++) { const w = {}; if (!compareBranch(mol, r[k], r[k + 1], w)) w.rule = F.rule; why.push(w); }
   const ranked = r.map(n => n.atom);
-  const rs = rsOf(mol, c);
+  let rs = rsOf(mol, c);
+  if (!rs && F.rule && chiralOK(mol, c)) { const s = chiSignFor(mol.atoms[c].chi, ranked); rs = s ? (F.kind === 'pseudo' ? (s > 0 ? 'r' : 's') : (s > 0 ? 'R' : 'S')) : null; }
   let view = null;
   const wm = wedgeMap || wedges(mol);
   const wd = [...wm.values()].find(x => x.from === c);

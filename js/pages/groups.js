@@ -1,8 +1,8 @@
-/* 작용기 도감: 왼쪽 목록(우선순위 순), 오른쪽 상세 — 접미사 · 접두사 · 예시 · 여러 뼈대에 붙인 이름 */
+/* 작용기 도감: 왼쪽 목록(우선순위 순), 오른쪽 상세 — 접미사 · 접두사는 늘 보이고, 예시 · 여러 뼈대에 붙인 이름은 탭으로 */
 import { GROUP_INFO } from '../data.js';
 import { TEMPLATES, attach } from '../chem/edit.js';
 import { drawMolecule } from '../draw.js';
-import { molecule, entry, esc, getLang, onLang, store } from '../ui.js';
+import { molecule, entry, esc, getLang, onLang, store, tabsHTML } from '../ui.js';
 
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 
@@ -63,14 +63,14 @@ export function mount(root, app, params) {
         <div class="fact"><span class="n">2</span><h3>고리에 붙을 때</h3><p>${esc(g.ring[0])}<small>${esc(g.ring[1] || '')}</small></p></div>
         <div class="fact"><span class="n">3</span><h3>접두사</h3><p>${esc(g.prefix[0])}<small>${esc(g.prefix[1] || '')}</small></p></div>
       </div>
-      <div class="sec-h"><h2>Examples</h2><p>눌러서 분자 조립에서 열기</p></div>
+      ${tabsHTML('grp', [{ id: 'ex', label: '예시 분자', n: ex.length, html: `<p class="tab-lead">눌러서 분자 조립에서 열기</p>
       <div class="ex-grid">${ex.map((x, i) => `<button class="ex" type="button" data-ex="${i}"><span class="exs">${drawMolecule(x.m.mol, x.m.res, { mode, locants: false, chain: false, compact: true })}</span>
-        <span><span class="exn">${esc(nm(x.m))}</span><span class="exk">${esc(nm2(x.m))}</span>${x.m.common ? `<span class="exc">${esc(x.m.common.ko)}${x.m.common.note ? ' — ' + esc(x.m.common.note) : ''}</span>` : ''}</span></button>`).join('')}</div>
-      <div class="sec-h"><h2>Attach</h2><p>${g.fg.split(' ')[0]} 하나를 기본 뼈대의 원자마다 붙이면 — 같은 작용기도 어디에 붙느냐에 따라 이름이 달라집니다</p></div>
+        <span><span class="exn">${esc(nm(x.m))}</span><span class="exk">${esc(nm2(x.m))}</span>${x.m.common ? `<span class="exc">${esc(x.m.common.ko)}${x.m.common.note ? ' — ' + esc(x.m.common.note) : ''}</span>` : ''}</span></button>`).join('')}</div>` },
+      { id: 'attach', label: '뼈대에 붙이기', n: rows.length, html: `<p class="tab-lead">${g.fg.split(' ')[0]} 하나를 기본 뼈대의 원자마다 붙이면 — 같은 작용기도 어디에 붙느냐에 따라 이름이 달라집니다</p>
       <div class="tbl-wrap panel"><table class="tbl"><thead><tr><th>뼈대</th><th>IUPAC 이름</th><th>${ko ? 'English' : '한글'}</th><th>관용명</th></tr></thead><tbody>
         ${rows.map((x, i) => `<tr><td>${x.t.ko}</td><td class="m"><button class="link" type="button" data-row="${i}">${esc(nm(x.e))}</button></td><td>${esc(nm2(x.e))}</td><td>${x.e.common ? esc(x.e.common.ko) : '<span style="color:var(--muted)">—</span>'}</td></tr>`).join('')}
       </tbody></table></div>
-      <p class="hint">프로펜의 끝 탄소(=CH₂)에 붙이면 CH₃ 와 같은 쪽(Z) · 반대쪽(E) 두 가지가 생깁니다 (분자 조립의 ‘E/Z’ 도구로 뒤집기). 사슬을 늘리는 작용기(COOH, CHO, CN …)를 붙이면 그 탄소까지 주사슬에 들어가 어근이 바뀝니다.</p>`;
+      <p class="hint">프로펜의 끝 탄소(=CH₂)에 붙이면 CH₃ 와 같은 쪽(Z) · 반대쪽(E) 두 가지가 생깁니다 (분자 조립의 ‘E/Z’ 도구로 뒤집기). 사슬을 늘리는 작용기(COOH, CHO, CN …)를 붙이면 그 탄소까지 주사슬에 들어가 어근이 바뀝니다.</p>` }], 'ex')}`;
     detail.querySelectorAll('[data-ex]').forEach(b => b.addEventListener('click', () => app.go('build', { smiles: ex[+b.dataset.ex].s, focusGroup: g.gid })));
     detail.querySelectorAll('[data-row]').forEach(b => b.addEventListener('click', () => app.go('build', { mol: rows[+b.dataset.row].e.mol, focusGroup: g.gid })));
     if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -78,5 +78,5 @@ export function mount(root, app, params) {
   root.querySelector('.g-list').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) { show(+b.dataset.k, innerWidth < 900); history.replaceState(null, '', '#groups-' + GROUP_INFO[+b.dataset.k].id); } });
   const off = onLang(() => show(cur));
   show(cur);
-  return { unmount() { off(); } };
+  return { unmount() { off(); }, report: () => ({ '작용기': GROUP_INFO[cur].id }) };
 }

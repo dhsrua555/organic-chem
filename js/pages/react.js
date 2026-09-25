@@ -1,14 +1,15 @@
-/* 반응 예측: 기질을 고르고 시약을 누르면 주 · 부생성물, 메커니즘, 풀이, 선택성, 최신 관점을 보여 준다 */
+/* 반응 예측: 기질을 고르고 시약을 누르면 주 · 부생성물을 그리고,
+   과정 · 선택성 · 입체 · 최신 연구는 탭으로 골라 본다 (고른 탭은 기억) */
 import { CATS, REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { fromSmiles } from '../chem/edit.js';
-import { makeMol } from '../chem/core.js';
+import { makeMol, toSmiles } from '../chem/core.js';
 import { drawMolecule } from '../draw.js';
-import { entry, tokensHTML, esc, store, getLang, onLang } from '../ui.js';
+import { entry, tokensHTML, esc, store, getLang, onLang, tabsHTML } from '../ui.js';
 import { commonName } from '../chem/common.js';
 import { defineMissing } from '../chem/stereo.js';
 import { rsCardHTML } from '../rsview.js';
 
-const EXAMPLES = {
+export const EXAMPLES = {
   sn: [['C[C@@H](Br)CC', '(R)-2-브로모뷰테인'], ['CC(C)(C)Br', 'tert-뷰틸 브로마이드'], ['CCCBr', '1-브로모프로페인'], ['CC(C)C(C)Br', '자리옮김이 되는 2차'], ['BrCc1ccccc1', '벤질 브로마이드'],
     ['C[C@H](Br)[C@@H](C)CC', '2-브로모-3-메틸펜테인 (안티 E2)'], ['C[C@@H]1CCCC[C@H]1Br', 'trans-1-브로모-2-메틸사이클로헥세인'], ['CC(C)[C@@H]1CC[C@@H](C)C[C@H]1Cl', '멘틸 클로라이드'], ['CC(C)[C@@H]1CC[C@@H](C)C[C@@H]1Cl', '네오멘틸 클로라이드']],
   alc: [['C[C@@H](O)CC', '(R)-뷰탄-2-올'], ['CCCO', '프로판-1-올'], ['CC(C)(C)O', 'tert-뷰탄올'], ['OC1CCCCC1', '사이클로헥산올'], ['CC(C)C(C)O', '3-메틸뷰탄-2-올'],
@@ -49,7 +50,7 @@ export function mount(root, app, params) {
           <div class="rx-subsvg"></div>
           <p class="rx-subname"></p>
           <div class="tools-row"><button class="btn" type="button" id="r-from">분자 조립에서 가져오기</button><button class="btn" type="button" id="r-edit">조립에서 고치기</button></div>
-          <div class="rx-ex"></div>
+          <details class="rx-ex-box"${store.get('rxExOpen', true) ? ' open' : ''}><summary class="lbl">예시 기질</summary><div class="rx-ex"></div></details>
         </div>
         <div class="panel rx-reag">
           <div class="rx-cats" role="tablist" aria-label="반응 종류">${CATS.map(c => `<button type="button" role="tab" data-cat="${c.id}"><b>${c.ko}</b><small>${c.sub}</small></button>`).join('')}</div>
@@ -76,7 +77,8 @@ export function mount(root, app, params) {
       b.classList.toggle('dim', !REACTIONS.some(x => x.cat === b.dataset.cat && ok[x.id]));
     });
     q('.rx-list').innerHTML = REACTIONS.filter(x => x.cat === cat).map(x => `<button type="button" role="listitem" class="rx-btn${ok[x.id] ? '' : ' dim'}${S.rid === x.id ? ' on' : ''}" data-rid="${x.id}"><b>${x.label}</b><small>${x.note}${x.modern ? ' · 현대' : ''}</small></button>`).join('');
-    q('.rx-ex').innerHTML = `<p class="lbl">예시 기질 · ${CATS.find(c => c.id === cat).ko}</p><div class="ex-chips">${(EXAMPLES[cat] || []).map(([s, k]) => `<button type="button" data-smi="${esc(s)}">${esc(k)}</button>`).join('')}</div>`;
+    q('.rx-ex-box > summary').textContent = `예시 기질 · ${CATS.find(c => c.id === cat).ko}`;
+    q('.rx-ex').innerHTML = `<div class="ex-chips">${(EXAMPLES[cat] || []).map(([s, k]) => `<button type="button" data-smi="${esc(s)}">${esc(k)}</button>`).join('')}</div>`;
   }
   function run(rid) {
     S.rid = rid;
@@ -117,10 +119,12 @@ export function mount(root, app, params) {
         </div>
         ${others.length ? `<div class="rx-minor"><p class="lbl">부생성물 · 함께 생기는 것</p><div class="rx-prods small">${others.map(prodHTML).join('')}</div></div>` : ''}
       </div>
-      ${rsBlock(rsProd = major.find(p => p.name && p.name.rs && p.name.rs.size))}
-      ${res.steps && res.steps.length ? `<div class="panel"><p class="lbl" style="padding:16px 18px 0;margin:0">어떻게 일어나나</p><ol class="steps">${res.steps.map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}${s.mol ? `<div class="step-mol">${drawMolecule(s.mol, null, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : ''}</div></li>`).join('')}</ol></div>` : ''}
-      ${res.select && res.select.length || res.stereoLine ? `<div class="changes"><p class="lbl">선택성 · 예측의 근거</p><ul>${res.stereoLine ? `<li><b>R/S: ${esc(res.stereoLine)}</b></li>` : ''}${(res.select || []).map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>` : ''}
-      ${res.modern && res.modern.length ? `<div class="modern panel"><p class="lbl">교과서 이후 · 지금의 이해</p>${res.modern.map(m => `<p><span class="ty">${esc(m.y)}</span>${esc(m.t)}</p>`).join('')}</div>` : ''}
+      ${tabsHTML('react', [
+        res.steps && res.steps.length && { id: 'steps', label: '어떻게 일어나나', html: `<div class="panel"><ol class="steps">${res.steps.map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}${s.mol ? `<div class="step-mol">${drawMolecule(s.mol, null, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : ''}</div></li>`).join('')}</ol></div>` },
+        (res.select && res.select.length || res.stereoLine) && { id: 'select', label: '선택성 · 근거', n: (res.select || []).length + (res.stereoLine ? 1 : 0), html: `<div class="changes"><ul>${res.stereoLine ? `<li><b>R/S: ${esc(res.stereoLine)}</b></li>` : ''}${(res.select || []).map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>` },
+        { id: 'stereo', label: '입체', html: rsBlock(rsProd = major.find(p => p.name && ((p.name.rs && p.name.rs.size) || (p.name.pseudo && p.name.pseudo.size)))) },
+        res.modern && res.modern.length && { id: 'modern', label: '최신 연구', n: res.modern.length, html: `<div class="modern panel">${res.modern.map(m => `<p><span class="ty">${esc(m.y)}</span>${esc(m.t)}</p>`).join('')}</div>` }
+      ], 'steps')}
       <div class="tools-row"><button class="btn" type="button" id="r-take">주생성물을 새 기질로</button><button class="btn" type="button" id="r-build">주생성물을 분자 조립에서</button><button class="btn" type="button" id="r-quiz">반응 퀴즈</button></div>`;
     const first = major.find(p => p.name);
     box.querySelector('#r-take').disabled = !first; box.querySelector('#r-build').disabled = !first;
@@ -133,6 +137,7 @@ export function mount(root, app, params) {
   const rsBlock = (p, sel) => p ? rsCardHTML(p.mol, p.name, { ko: getLang() === 'ko', racemic: true, sel }).replace('입체중심 R/S · CIP 순위 규칙', '주생성물의 R/S · CIP 순위') : '';
   const placeholder = () => `<div class="panel rx-empty"><p class="lbl">예측 결과</p><p>왼쪽에서 시약을 누르면 생성물이 여기에 나타납니다.</p><p class="hint">밝게 표시된 시약이 이 기질과 반응할 수 있는 것입니다. 흐린 시약을 눌러도 왜 반응하지 않는지 알려 줍니다.</p></div>`;
 
+  q('.rx-ex-box').addEventListener('toggle', e => store.set('rxExOpen', e.currentTarget.open));
   root.addEventListener('click', e => {
     const t = e.target.closest('.rs-card [data-cip]');
     if (t && rsProd) { t.closest('.rs-card').outerHTML = rsBlock(rsProd, +t.dataset.cip); return; }
@@ -149,5 +154,12 @@ export function mount(root, app, params) {
   const off = onLang(() => { paintSub(); if (S.res) paintResult(); });
   paintSub();
   if (S.rid) run(S.rid); else { q('.rx-right').innerHTML = placeholder(); app.setMol(subEntry.res ? subEntry : entry(S.mol)); }
-  return { unmount() { off(); } };
+  return {
+    unmount() { off(); },
+    report: () => ({
+      '기질 SMILES': toSmiles(S.mol), '기질 이름': subEntry && subEntry.res ? subEntry.res.nameEn : subEntry && subEntry.err,
+      '반응': S.rid ? `${S.rid} (${((REACTIONS.find(x => x.id === S.rid) || {}).label || '').replace(/<[^>]+>/g, '')})` : '(고르지 않음)',
+      '결과': S.res ? (S.res.ok ? S.res.products.map(p => `${p.role}${p.pct ? ' ' + p.pct + '%' : ''}: ${p.name ? p.name.nameEn : p.err || ''} [${toSmiles(p.mol)}]`).join(' / ') : '반응 없음 — ' + (S.res.reason || '')) : ''
+    })
+  };
 }

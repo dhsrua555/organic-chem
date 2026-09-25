@@ -1,6 +1,7 @@
 /* 분자 조립: 뼈대 · 유명한 분자에서 시작해 원자를 눌러 조각을 붙이고, 결합을 바꾸고, 가지를 지운다.
-   이름 · 풀이 · 바뀐 점 · 비교 목록을 곧바로 보여 준다. 입체중심은 늘 배열(R/S)을 정해 두고 R/S 도구로 뒤집는다.
-   비교 목록은 무거워서 바로 그리지 않고 잠깐 뒤에 채운다 (연달아 눌러도 끊기지 않게) */
+   이름은 늘 보이고, 바뀐 점 · 풀이 · 입체 · 참고 · 비교는 탭으로 골라 본다 (고른 탭은 기억).
+   입체중심은 늘 배열(R/S)을 정해 두고 R/S 도구로 뒤집는다.
+   비교 목록은 무거워서 ‘비교’ 탭을 열었을 때만, 잠깐 뒤에 채운다 (연달아 눌러도 끊기지 않게) */
 import { FRAGMENTS, FRAG_GROUPS, TEMPLATES, fromSmiles, attach, cycleBond, removeBranch, flipEZ, tidy } from '../chem/edit.js';
 import { makeMol, toSmiles, unsaturation } from '../chem/core.js';
 import { defineMissing, flipCenter, mirror } from '../chem/stereo.js';
@@ -8,7 +9,7 @@ import { rsCardHTML } from '../rsview.js';
 import { CLASS } from '../chem/name.js';
 import { steps, diff, noteText } from '../chem/explain.js';
 import { drawMolecule, templateIcon } from '../draw.js';
-import { entry, molecule, tokensHTML, formulaHTML, esc, store, getLang, onLang, pick, copyText } from '../ui.js';
+import { entry, molecule, tokensHTML, formulaHTML, esc, store, getLang, onLang, pick, copyText, tabsHTML, tabNow } from '../ui.js';
 
 const LBL = s => s.replace(/(\d)/g, '<sub>$1</sub>');
 const TOOLS = [
@@ -43,14 +44,14 @@ export function mount(root, app, params) {
     </div>
     <div class="bl-grid">
       <div class="bl-tools">
-        <div class="blk blk-scaf panel ticks">
-          <h2 class="lbl" id="lb-scaf">시작 분자</h2>
+        <details class="blk blk-scaf panel ticks"${store.get('scafOpen', !saved) ? ' open' : ''}>
+          <summary class="lbl" id="lb-scaf">시작 분자 · 유명한 분자</summary>
           <div class="scafs" role="group" aria-labelledby="lb-scaf">${BASES.map(t => `<button class="scaf" type="button" data-t="${t.id}"><span class="hx">${templateIcon(t.id)}</span>${t.ko}</button>`).join('')}</div>
           <details class="famous"><summary>유명한 분자 ${FAMOUS.length}개</summary><div class="fam-list">${FAMOUS.map(t => `<button type="button" data-t="${t.id}"><b>${t.ko}</b><small>${t.note}</small></button>`).join('')}</div></details>
-        </div>
+        </details>
         <div class="blk blk-pal panel">
           <div class="toolbar" role="radiogroup" aria-label="도구">${TOOLS.map(([id, ko, tip]) => `<button class="tool" type="button" role="radio" data-tool="${id}" title="${tip}">${ko}</button>`).join('')}</div>
-          <div class="palette-wrap">${FRAG_GROUPS.map(([g, ko]) => `<h2 class="lbl">${ko}</h2><div class="palette" role="radiogroup" aria-label="${ko}">${Object.entries(FRAGMENTS).filter(([, f]) => f.group === g).map(([id, f]) => `<button class="chip" type="button" role="radio" data-g="${id}" aria-checked="false" title="${f.ko}"><span>${LBL(f.label)}</span></button>`).join('')}</div>`).join('')}</div>
+          <div class="palette-wrap">${tabsHTML('pal', FRAG_GROUPS.map(([g, ko]) => ({ id: g, label: ko, html: `<div class="palette" role="radiogroup" aria-label="${ko}">${Object.entries(FRAGMENTS).filter(([, f]) => f.group === g).map(([id, f]) => `<button class="chip" type="button" role="radio" data-g="${id}" aria-checked="false" title="${f.ko}"><span>${LBL(f.label)}</span></button>`).join('')}</div>` })), (FRAGMENTS[S.sel] || {}).group)}</div>
           <p class="pal-info" aria-live="polite"></p>
         </div>
         <div class="blk blk-tools panel"><h2 class="lbl">편집</h2><div class="tools-row">
@@ -101,7 +102,8 @@ export function mount(root, app, params) {
     const m = cur.mol, r = cur.res;
     const nC = m.atoms.filter(a => a.el === 'C').length;
     q('.stage-count').textContent = `원자 ${m.atoms.length} · 탄소 ${nC}`;
-    if (!r || !r.rs || !r.rs.has(S.cip)) S.cip = r && r.rs && r.rs.size && S.tool === 'rs' ? r.rs.keys().next().value : null;
+    const hasC = c => r && ((r.rs && r.rs.has(c)) || (r.pseudo && r.pseudo.has(c)));
+    if (!hasC(S.cip)) S.cip = r && r.rs && r.rs.size && S.tool === 'rs' ? r.rs.keys().next().value : null;
     q('.svgwrap').innerHTML = drawMolecule(m, r, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick, cip: S.cip });
     const cls = r ? (r.P ? CLASS[r.P].ko : r.enes.length || r.ynes.length ? (r.ynes.length ? '알카인' : '알켄') : r.kind === 'benzene' || r.kind === 'biphenyl' ? '방향족 탄화수소' : m.atoms.some(a => a.el !== 'C') ? '치환 탄화수소' : r.kind === 'ring' ? '사이클로알케인' : '알케인') : '—';
     q('.stage-foot').innerHTML = `<span><em>분자식</em>${formulaHTML(cur.f)}</span><span><em>몰질량</em>${cur.f.mass.toFixed(2)} g/mol</span><span><em>분류</em>${cls}</span><span><em>불포화도</em>${unsaturation(m)}</span><span class="smi"><em>SMILES</em>${esc(toSmiles(m))}</span>`;
@@ -120,8 +122,10 @@ export function mount(root, app, params) {
     const cm = cur.common;
     const st = steps(cur.mol, r);
     const notes = (r.notes || []).map(noteText).filter(Boolean);
+    const warns = notes.filter(n => n.tone === 'warn'), infos = notes.filter(n => n.tone !== 'warn');
     const d = S.prev && S.prev.res ? diff(S.prev.mol, S.prev.res, cur.mol, r) : [];
-    const frag = S.lastFrag || S.sel;
+    const rsHTML = rsCardHTML(cur.mol, r, { sel: S.cip, ko, mirrorBtn: true });
+    const nSt = (r.centers ? r.centers.length : 0) + (r.ct ? r.ct.length : 0);
     q('.result').innerHTML = `
       <div class="nm panel ticks">
         <button class="copy" type="button" id="b-copy">복사</button>
@@ -131,38 +135,47 @@ export function mount(root, app, params) {
         ${cm ? `<p class="name-common">관용명 <b>${esc(ko ? cm.ko : cm.en)}</b> · ${esc(ko ? cm.en : cm.ko)}${cm.note ? ` — ${esc(cm.note)}` : ''}</p>` : ''}
         <p class="legend" aria-hidden="true"><span class="l-loc">위치 번호</span><span class="l-pre">접두사</span><span class="l-par">모체(어근)</span><span class="l-une">불포화</span><span class="l-suf">접미사</span>${r.stereo ? '<span class="l-ste">입체</span>' : ''}</p>
       </div>
-      ${d.length ? `<div class="changes"><p class="lbl">방금 바뀐 것</p><p class="from">${esc(S.prev.res.nameEn)} → ${esc(r.nameEn)}</p><ul>${d.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
-      ${rsCardHTML(cur.mol, r, { sel: S.cip, ko, mirrorBtn: true })}
-      ${notes.length ? `<div class="notes">${notes.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` : ''}
-      <div class="panel"><p class="lbl" style="padding:16px 18px 0;margin:0">이름 짓는 과정</p><ol class="steps">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol></div>
-      <div class="cmp-slot"></div>`;
+      ${warns.length ? `<div class="notes">${warns.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` : ''}
+      ${tabsHTML('build', [
+        d.length && { id: 'diff', label: '바뀐 점', n: d.length, html: `<div class="changes"><p class="from">${esc(S.prev.res.nameEn)} → ${esc(r.nameEn)}</p><ul>${d.map(x => `<li>${x}</li>`).join('')}</ul></div>` },
+        { id: 'steps', label: '이름 풀이', html: `<div class="panel"><ol class="steps">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol></div>` },
+        rsHTML && { id: 'stereo', label: '입체', n: nSt, html: rsHTML },
+        infos.length && { id: 'notes', label: '참고', n: infos.length, html: `<div class="notes">${infos.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` },
+        { id: 'cmp', label: '비교', html: `<div class="cmp-slot"><p class="hint">목록을 만드는 중…</p></div>` }
+      ], 'steps')}`;
     root.querySelectorAll('.rs-tabs [data-cip]').forEach(bt => bt.addEventListener('click', () => { S.cip = +bt.dataset.cip; renderSvgOnly(); renderResult(true); }));
     const mb = q('#b-mirror'); if (mb) mb.addEventListener('click', () => commit(mirror(S.mol)));
-    /* 비교 목록: 잠깐 뒤에 (그 사이 또 바뀌면 취소) */
-    const token = ++cmpToken;
-    clearTimeout(cmpTimer);
-    cmpTimer = setTimeout(() => {
-      if (token !== cmpToken || !cur.res) return;
-      rowsCache = [];
-      const cmpB = S.tool === 'add' && cur.mol.atoms.length <= 40 ? compareSites(S.sel) : [];
-      const cmpA = compareBases(frag);
-      const slot = q('.cmp-slot'); if (!slot) return;
-      slot.innerHTML = `${cmpB.length ? `<div class="cmp panel"><p class="lbl">원자마다 ${LBL(FRAGMENTS[S.sel].label)} 붙여 보기</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : ''}
-        ${cmpA.length ? `<div class="cmp panel"><p class="lbl">${LBL(FRAGMENTS[frag].label)} 하나를 여러 뼈대에 붙이면</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : ''}`;
-      slot.querySelectorAll('.cmp-list button').forEach((bt, i) => bt.addEventListener('click', () => {
-        const x = rowsCache[i];
-        commit(x.mol, x.frag);
-        if (innerWidth < 900) q('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }));
-    }, skipCmpDelay ? 0 : 180);
+    fillCmp();
     q('#b-copy').addEventListener('click', async e => {
       const ok = await copyText(r.nameEn, q('.name-main'));
       e.target.textContent = ok ? '복사됨' : '선택됨';
       setTimeout(() => { e.target.textContent = '복사'; }, 1400);
     });
   }
+  /* 비교 목록: ‘비교’ 탭이 열려 있을 때만, 잠깐 뒤에 (그 사이 또 바뀌면 취소) */
+  function fillCmp() {
+    const token = ++cmpToken;
+    clearTimeout(cmpTimer);
+    if (tabNow(root, 'build') !== 'cmp') return;
+    const frag = S.lastFrag || S.sel;
+    cmpTimer = setTimeout(() => {
+      if (token !== cmpToken || !cur.res) return;
+      rowsCache = [];
+      const cmpB = S.tool === 'add' && cur.mol.atoms.length <= 40 ? compareSites(S.sel) : [];
+      const cmpA = compareBases(frag);
+      const slot = q('.cmp-slot'); if (!slot) return;
+      slot.innerHTML = (cmpB.length ? `<div class="cmp panel"><p class="lbl">원자마다 ${LBL(FRAGMENTS[S.sel].label)} 붙여 보기</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : '')
+        + (cmpA.length ? `<div class="cmp panel"><p class="lbl">${LBL(FRAGMENTS[frag].label)} 하나를 여러 뼈대에 붙이면</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : '')
+        || '<p class="hint">비교할 것이 없습니다. ‘붙이기’ 도구로 조각을 고르면 원자마다 붙인 결과를 보여 줍니다.</p>';
+      slot.querySelectorAll('.cmp-list button').forEach((bt, i) => bt.addEventListener('click', () => {
+        const x = rowsCache[i];
+        commit(x.mol, x.frag);
+        if (innerWidth < 900) q('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }));
+    }, 180);
+  }
+  root.addEventListener('tabchange', e => { if (e.detail.key === 'build' && e.detail.id === 'cmp') fillCmp(); });
   let rowsCache = [], cmpToken = 0, cmpTimer = 0;
-  const skipCmpDelay = false;
   const baseCache = new Map();
   function rowHTML(x) {
     const ko = getLang() === 'ko';
@@ -240,7 +253,8 @@ export function mount(root, app, params) {
   });
   const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; S.cip = null; commit(fromSmiles(t.smi), null, true); };
   root.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
-  root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; paintTools(); render(false); });
+  q('.blk-scaf').addEventListener('toggle', e => store.set('scafOpen', e.currentTarget.open));
+  root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; if (S.tool === 'rs') store.set('tab:build', 'stereo'); paintTools(); render(false); });
   root.querySelector('.palette-wrap').addEventListener('click', e => {
     const b = e.target.closest('[data-g]'); if (!b) return;
     S.sel = b.dataset.g; S.tool = 'add'; S.msg = ''; save(); paintTools(); renderResult();
@@ -284,5 +298,8 @@ export function mount(root, app, params) {
   const offLang = onLang(() => render(false));
 
   render('first');
-  return { unmount() { offLang(); document.removeEventListener('keydown', onKey); app.focus3d(false); if (app.scene) { app.scene.setFocus(false); app.scene.setShowH(true); } } };
+  return {
+    unmount() { clearTimeout(cmpTimer); offLang(); document.removeEventListener('keydown', onKey); app.focus3d(false); if (app.scene) { app.scene.setFocus(false); app.scene.setShowH(true); } },
+    report: () => ({ '분자 SMILES': toSmiles(S.mol), '이름': cur && cur.res ? cur.res.nameEn : cur && cur.err ? '(이름 못 지음) ' + cur.err : '', '도구': S.tool === 'add' ? '붙이기 ' + S.sel : S.tool })
+  };
 }
