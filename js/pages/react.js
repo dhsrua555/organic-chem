@@ -130,7 +130,7 @@ export function mount(root, app, params) {
     box.querySelector('#r-take').disabled = !first; box.querySelector('#r-build').disabled = !first;
     box.querySelector('#r-take').addEventListener('click', () => { if (!first) return; S.mol = sub0(first.mol); S.rid = null; S.res = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol)); });
     box.querySelector('#r-build').addEventListener('click', () => first && app.go('build', { mol: first.mol }));
-    box.querySelector('#r-quiz').addEventListener('click', () => app.go('quiz', { mode: 'react' }));
+    box.querySelector('#r-quiz').addEventListener('click', () => app.go('quiz', { mode: 'react', cat: S.cat }));
   }
   /* 주생성물의 R/S 풀이 (입체중심이 있을 때) */
   let rsProd = null;

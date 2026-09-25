@@ -686,3 +686,35 @@ svg.mol .m-ct { fill: var(--warn); font-size: 12px; font-family: var(--body); fo
   .bug-btn span { display: none; }
   .bug-btn { padding: 6px 8px; }
 }
+
+/* ── 퀴즈: 분야 → 주제 ─────────────── */
+.q-areas { display: flex; flex-wrap: wrap; gap: 6px; margin: 24px 0 10px; }
+.q-areas button { background: var(--panel); border: 1px solid var(--line-2); color: var(--ink-2); padding: 9px 18px; cursor: pointer; font-size: 14px; letter-spacing: 0.04em; }
+.q-areas button:hover { color: var(--ink); border-color: var(--accent-2); }
+.q-areas button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.q-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 6px; }
+.q-topics button { position: relative; display: grid; align-content: start; gap: 2px; text-align: left; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); cursor: pointer; font-size: 13px; }
+.q-topics button b { font-weight: 500; color: inherit; padding-right: 38px; }
+.q-topics button small { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.q-topics button:hover { border-color: var(--accent-2); color: var(--ink); }
+.q-topics button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-dim); color: var(--ink); }
+.q-st { position: absolute; top: 8px; right: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--accent-3); }
+.q-sets { display: flex; flex-wrap: wrap; gap: 10px; }
+.q-sets .seg[hidden] { display: none; }
+.q-bar { margin-top: 14px; }
+.q-opt.txt { grid-template-columns: minmax(0, 1fr); font-family: var(--body); gap: 2px; }
+.q-opt.txt b { font-weight: 500; font-size: 15px; color: var(--ink); }
+.q-opt.txt small { font-size: 12px; color: var(--muted); }
+.q-opt.mono b { font-family: var(--mono); }
+.q-opt .q-after { color: var(--accent-3); }
+@media (max-width: 560px) {
+  .q-topics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .q-areas button { flex: 1 1 auto; padding: 9px 10px; }
+}
+.q-topics-box > summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; padding: 6px 0 10px; list-style-position: inside; }
+.q-topics-box > summary .lbl { margin: 0; }
+.q-topics-box > summary b { font-weight: 500; font-size: 14px; }
+.q-topics-box > summary small { font-size: 11.5px; color: var(--accent-2); }
+.q-topics-box[open] > summary small { display: none; }
+.menu-log { position: absolute; right: calc(var(--gut) + 6vw); bottom: calc(var(--hud-h) + 14px); font-size: 12px; letter-spacing: 0.12em; color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--line-2); padding-bottom: 2px; }
+.menu-log:hover, .menu-log:focus-visible { color: var(--ink); border-color: var(--accent-2); }

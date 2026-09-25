@@ -171,8 +171,8 @@ with sync_playwright() as pw:
     p.click('#menu-btn'); time.sleep(0.8); p.screenshot(path=str(OUT / 'act_menu.png'))
     p.click('.menu-list a[href="#quiz"]'); time.sleep(1.5)
     print('route:', p.evaluate('location.hash'), p.evaluate('document.getElementById("menu").hidden'))
-    for mode in ['name', 'struct', 'react', 'rs']:
-        p.click(f'.q-bar [data-mode="{mode}"]'); time.sleep(0.5)
+    for mode, sel in [('name', '[data-area="name"]'), ('struct', '[data-dir="struct"]'), ('stereo', '[data-area="stereo"]'), ('react', '[data-area="react"]')]:
+        p.click(sel); time.sleep(0.5)
         for k in range(3):
             opts = p.query_selector_all('.q-opt')
             opts[k % len(opts)].click(); time.sleep(0.3)

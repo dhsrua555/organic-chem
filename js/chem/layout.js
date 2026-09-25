@@ -253,30 +253,57 @@ function cross(p1, p2, p3, p4) {
   const d1 = d(p3, p4, p1), d2 = d(p3, p4, p2), d3 = d(p1, p2, p3), d4 = d(p1, p2, p4);
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
-/* 겹침 풀기: 고리 밖 단일결합마다 작은 쪽을 뒤집거나 돌려 본다 */
+/* 겹침 풀기: 고리 밖 단일결합마다 작은 쪽을 뒤집거나 돌려 본다.
+   움직이는 쪽(side)만 바뀌므로 점수는 "움직이는 원자 × 나머지 원자", "움직이는 결합 × 고정된 결합" 만 다시 센다
+   (움직이는 쪽 안의 쌍은 통째로 움직여 그대로). 지금 겹침이 없는 쪽은 돌려 봐야 나아질 수 없으므로 건너뛴다 */
 function untangle(mol, R, stereo, linear) {
   let score = clashScore(mol);
   if (score < 1e-6) return;
+  const A = mol.atoms, n = A.length;
+  const bonded = new Set(mol.bonds.map(b => b.a < b.b ? b.a * 4096 + b.b : b.b * 4096 + b.a));
   const locked = new Set();
   for (const s of stereo) { locked.add(s.a); locked.add(s.b); }
   /* sp 원자(삼중결합 · C=C=C)에서 가지를 돌리면 180° 가 깨진다 */
-  mol.atoms.forEach((_, i) => { if (linear(i)) locked.add(i); });
+  A.forEach((_, i) => { if (linear(i)) locked.add(i); });
+  const inS = new Uint8Array(n);
   for (let pass = 0; pass < 4 && score > 1e-6; pass++) {
     for (let k = 0; k < mol.bonds.length && score > 1e-6; k++) {
       const b = mol.bonds[k];
       if (b.o !== 1 || R.same(b.a, b.b)) continue;
       for (const [u, v] of [[b.a, b.b], [b.b, b.a]]) {
         const side = branch(mol, v, u);
-        if (side.size > mol.atoms.length / 2 + 0.5) continue;
-        const save = [...side].map(i => [i, mol.atoms[i].x, mol.atoms[i].y]);
-        const restore = () => save.forEach(([i, x, y]) => { mol.atoms[i].x = x; mol.atoms[i].y = y; });
+        if (side.size > n / 2 + 0.5) continue;
+        const S = [...side];
+        inS.fill(0); for (const i of S) inS[i] = 1;
+        const mv = [], fx = [];
+        for (const bd of mol.bonds) (inS[bd.a] || inS[bd.b] ? mv : fx).push(bd);
+        const part = () => {
+          let t = 0;
+          for (const i of S) {
+            const P = A[i];
+            for (let j = 0; j < n; j++) {
+              if (inS[j] || bonded.has(i < j ? i * 4096 + j : j * 4096 + i)) continue;
+              const d = Math.hypot(P.x - A[j].x, P.y - A[j].y);
+              if (d < 0.72) t += (0.72 - d) ** 2 * (d < 0.3 ? 4 : 1);
+            }
+          }
+          for (const b1 of mv) for (const b2 of fx) {
+            if (b1.a === b2.a || b1.a === b2.b || b1.b === b2.a || b1.b === b2.b) continue;
+            if (cross(A[b1.a], A[b1.b], A[b2.a], A[b2.b])) t += 0.5;
+          }
+          return t;
+        };
+        const before = part();
+        if (before < 1e-9) continue;
+        const save = S.map(i => [i, A[i].x, A[i].y]);
+        const restore = () => save.forEach(([i, x, y]) => { A[i].x = x; A[i].y = y; });
         const trials = [() => reflect(mol, side, u, v), () => rotate(mol, side, u, 60), () => rotate(mol, side, u, -60), () => rotate(mol, side, u, 30), () => rotate(mol, side, u, -30)];
-        let bestS = score, bestT = -1;
+        let best = before, bestT = -1;
         trials.forEach((f, ti) => {
           if (ti > 0 && locked.has(u)) return; /* 이중결합 · sp 원자에서는 각도를 바꾸지 않음 */
-          f(); const s = clashScore(mol); if (s < bestS - 1e-9) { bestS = s; bestT = ti; } restore();
+          f(); const t = part(); if (t < best - 1e-9) { best = t; bestT = ti; } restore();
         });
-        if (bestT >= 0) { trials[bestT](); score = bestS; }
+        if (bestT >= 0) { trials[bestT](); score += best - before; }
       }
     }
   }

@@ -3,7 +3,9 @@ import { $, $$, store, getLang, setLang, mq } from './ui.js';
 import { startFx } from './fx.js';
 import { initReport } from './report.js';
 
-const VERSION = 'v8 · 2026-09-26';
+/* 패치 노트(CHANGELOG.md · GitHub Releases)의 번호와 같게 */
+const VERSION = 'v6.0 · 2026-09-26';
+$('#menu-ver').textContent = VERSION.split(' ')[0];
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
 const low = mq('(pointer: coarse)') || Math.min(innerWidth, innerHeight) < 700;

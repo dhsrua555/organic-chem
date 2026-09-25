@@ -4,7 +4,9 @@
    - 누르면 충격파로 원자가 튀었다 돌아오고 바닥에 육각 물결, 길게 누르면 분자가 벌어진다(분해도)
    - 3D 보기: 끌어서 회전, 휠 · 두 손가락으로 확대 · 축소, 두 번 눌러 처음 모양
    - 빠르게 여러 번 바꾸면 마지막 분자만 만들고, 사라지는 분자는 하나만 남겨 짧게 전환한다 (렉 방지).
-     가만히 있을 때는 색수차 세 겹 대신 한 겹만 그린다 */
+     가만히 있을 때는 색수차 세 겹 대신 한 겹만 그린다
+   - 가벼운 모드(분자 조립 화면: 분자가 흐릿한 배경일 뿐): H 없이 성긴 원자 · 얇은 결합, 줄무늬 전환 · 커서 반응 없이
+     편집이 멈춘 뒤에 한 번만 만들고, 30fps 로 그린다. 3D 보기를 켜면 원래 모습으로 */
 import * as THREE from './three.js';
 import { embed3d } from './chem/geom3d.js';
 import { rings } from './chem/core.js';
@@ -93,8 +95,9 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
   const state = {
     anchor: { x: -0.25, y: 0.02, scale: 1, dim: 1 }, cur: { x: -0.25, y: 0.02, scale: 1, dim: 1 },
     motion: !reduce, drag: null, rotX: 0.28, rotY: 0, baseY: 0, phase: 0, mouse: [0, 0], px: [-9999, -9999], moved: 0,
-    live: [], zoom: 1, zoomT: 1, focus: false, explode: 0, explodeT: 0, hold: null, rippleIdx: 0, showH: true
+    live: [], zoom: 1, zoomT: 1, focus: false, explode: 0, explodeT: 0, hold: null, rippleIdx: 0, showH: true, lite: false
   };
+  const isLite = () => state.lite && !state.focus;
   let W = 1, H = 1, last = performance.now(), running = true;
   let current = null; /* 지금 맺혀 있는 분자 (원자 반응용) */
   const hud = document.createElement('div');
@@ -124,7 +127,9 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     const R = rings(mol);
     const pri = res ? res.principalAtoms || new Set() : new Set();
     const hl = opts.hl || new Set();
-    const showH = state.showH;
+    const lite = isLite();
+    const showH = state.showH && !lite;
+    const sides = lite ? 3 : 6;
     const pos = [], col = [], rnd = [], owner = [];
     const push = (a, b, c, oa, ob) => { pos.push(a[0], a[1], a[2], b[0], b[1], b[2]); col.push(c.r, c.g, c.b, c.r, c.g, c.b); rnd.push(Math.random(), Math.random()); owner.push(oa, ob); };
     const colorOf = a => (a.heavy >= 0 && pri.has(a.heavy)) ? COL.pri : (a.heavy >= 0 && hl.has(a.heavy)) ? COL.hl : (a.el === 'C' || a.el === 'H') ? COL.wire : COL.hetero;
@@ -134,7 +139,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       if (a.el === 'H' && !showH) return;
       const id = i < MAXA ? i : -1;
       idx[i] = id;
-      const r = RAD[a.el] || 0.34, e = ico[a.el === 'H' ? 0 : 1], c = colorOf(a);
+      const r = RAD[a.el] || 0.34, e = ico[a.el === 'H' || lite ? 0 : 1], c = colorOf(a);
       for (let k = 0; k < e.length; k += 6) push([a.p[0] + e[k] * r, a.p[1] + e[k + 1] * r, a.p[2] + e[k + 2] * r], [a.p[0] + e[k + 3] * r, a.p[1] + e[k + 4] * r, a.p[2] + e[k + 5] * r], c, id, id);
     });
     g.bonds.forEach(b => {
@@ -153,8 +158,8 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       const oa = idx[b.a] ?? -1, ob = idx[b.b] ?? -1;
       for (const off of strands) {
         const s2 = add(s, mul(n1, off)), e2 = add(e, mul(n1, off));
-        const ring = k => { const t = Math.PI / 3 * k; return add(mul(n1, Math.cos(t) * rr), mul(n2, Math.sin(t) * rr)); };
-        for (let k = 0; k < 6; k++) {
+        const ring = k => { const t = Math.PI * 2 / sides * k; return add(mul(n1, Math.cos(t) * rr), mul(n2, Math.sin(t) * rr)); };
+        for (let k = 0; k < sides; k++) {
           const o = ring(k), o2 = ring(k + 1);
           push(add(s2, o), add(e2, o), c, oa, ob);
           push(add(s2, o), add(s2, o2), c, oa, oa);
@@ -215,6 +220,11 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     burstCount = gap < 700 ? burstCount + 1 : 0;
     clearTimeout(pendTimer);
     if (opts.instant || !current) { flush(false); return; }
+    /* 가벼운 모드: 편집이 잠깐 멈춘 뒤, 브라우저가 한가할 때 한 번만 만든다 */
+    if (isLite()) {
+      pendTimer = setTimeout(() => { if (window.requestIdleCallback) requestIdleCallback(() => flush(true), { timeout: 400 }); else flush(true); }, 260);
+      return;
+    }
     /* 빠르게 연달아 누르면 잠깐 기다렸다가 마지막 분자만 */
     pendTimer = setTimeout(() => flush(burstCount > 0), burstCount > 0 ? 120 : 0);
   }
@@ -224,14 +234,14 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     pending = null;
     let w;
     try { w = makeWire(mol, res, opts); } catch (e) { console.warn(e); return; }
-    const quick = rapid || !state.motion;
-    /* 이미 사라지는 중인 분자는 바로 치우고, 지금 분자 하나만 풀려 사라지게 */
+    const lite = isLite(), quick = rapid || !state.motion || lite;
+    /* 이미 사라지는 중인 분자는 바로 치우고, 지금 분자 하나만 풀려 사라지게 (가벼운 모드는 바로 바꿔 끼움) */
     state.live = state.live.filter(o => {
-      if (o.target === 1 || quick && o !== current) { dispose(o); return false; }
+      if (lite || o.target === 1 || quick && o !== current) { dispose(o); return false; }
       return true;
     });
     for (const o of state.live) { o.target = 1; o.speed = quick ? 3.2 : 1.6; }
-    const inst = opts.instant || reduce;
+    const inst = opts.instant || reduce || isLite();
     w.t = inst ? 0 : quick ? 0.6 : 1; w.target = 0; w.delay = inst || quick || !state.live.length ? 0 : 0.28; w.speed = quick ? 2.4 : 1.15;
     state.live.push(w);
     spin.add(w.group);
@@ -274,7 +284,14 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
   canvas.addEventListener('dblclick', () => reset());
   function zoomTo(z) { state.zoomT = Math.max(0.45, Math.min(3.5, z)); }
   function reset() { state.zoomT = 1; state.rotX = 0.28; state.rotY = 0; state.baseY = 0; state.phase = 0; }
-  function setFocus(on) { state.focus = on; if (!on) reset(); }
+  function setFocus(on) {
+    const was = isLite();
+    state.focus = on; if (!on) reset();
+    if (was !== isLite()) rebuild();
+  }
+  /* 가벼운 모드 켜고 끄기 (분자 조립 화면) */
+  function setLite(on, now = true) { const was = isLite(); state.lite = !!on; if (now && was !== isLite()) rebuild(); }
+  function rebuild() { if (state.last) { const { mol, res, opts } = state.last; setMolecule(mol, res, { ...opts, instant: true }); } }
   function setShowH(on) { state.showH = on; if (state.last) { const { mol, res, opts } = state.last; setMolecule(mol, res, { ...opts, instant: true }); } }
 
   /* ── 마우스 · 클릭 효과 ── */
@@ -306,7 +323,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     const now = performance.now() / 1000;
     const fp = floorPoint(x, y);
     if (fp) { rip[state.rippleIdx % 4].set(fp.x, fp.z, now, 1.2 * strength); state.rippleIdx++; }
-    if (!current) return;
+    if (!current || isLite()) return;
     for (const a of current.phys) {
       const s = screenOf(a);
       if (!s) continue;
@@ -348,6 +365,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
 
   function physics(dt, now) {
     if (!current) return;
+    if (isLite()) { if (state.physBusy) { state.physBusy = false; drawTags([]); } return; }
     const w = current;
     const mouseActive = fine && !reduce && now - state.moved < 2500;
     const R = 150;
@@ -379,20 +397,25 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
   }
 
   /* 프레임 시간 평균으로 해상도 조절: 45fps 밑이면 낮추고, 오래 여유 있으면 다시 올린다 */
-  let ema = 16, frames = 0, calm = 0, cool = 0, idleFrames = 0;
-  function adapt(rawDt) {
-    ema += (Math.min(rawDt, 100) - ema) * 0.05;
+  let ema = 16, frames = 0, calm = 0, cool = 0, idleFrames = 0, lastDraw = 0;
+  /* f: 목표 프레임 간격의 배수 (30fps 로 그릴 때 2) */
+  function adapt(rawDt, f) {
+    ema += (Math.min(rawDt, 100 * f) - ema) * 0.05;
     if (++frames % 60) return;
     if (cool > 0) { cool--; return; }
-    if (ema > 23 && dpr > minDpr) { dpr = Math.max(minDpr, dpr - 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 2; }
-    else if (ema < 14 && dpr < maxDpr) { if (++calm >= 5) { dpr = Math.min(maxDpr, dpr + 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 3; } }
+    if (ema > 23 * f && dpr > minDpr) { dpr = Math.max(minDpr, dpr - 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 2; }
+    else if (ema < 14 * f && dpr < maxDpr) { if (++calm >= 5) { dpr = Math.min(maxDpr, dpr + 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 3; } }
     else calm = 0;
   }
   function frame(now) {
     if (!running) return;
+    /* 가벼운 모드는 30fps: 그 사이 프레임은 건너뛴다 */
+    const lite = isLite();
+    if (lite && now - lastDraw < 30) { requestAnimationFrame(frame); return; }
+    lastDraw = now;
     const raw = now - last;
     const dt = Math.min(0.05, raw / 1000); last = now;
-    if (!document.hidden) adapt(raw);
+    if (!document.hidden) adapt(raw, lite ? 2 : 1);
     const k = 1 - Math.pow(0.001, dt);
     const c = state.cur, a = state.anchor;
     c.x += (a.x - c.x) * k * 0.9; c.y += (a.y - c.y) * k * 0.9; c.scale += (a.scale - c.scale) * k; c.dim += (a.dim - c.dim) * k;
@@ -452,7 +475,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     if (running) { last = performance.now(); requestAnimationFrame(frame); }
   });
   return {
-    setMolecule, setAnchor, setMotion, resize, canvas, setFocus, setShowH,
+    setMolecule, setAnchor, setMotion, resize, canvas, setFocus, setShowH, setLite,
     zoomIn: () => zoomTo(state.zoomT * 1.25), zoomOut: () => zoomTo(state.zoomT / 1.25), reset,
     burst: (x, y, s = 1) => burst(x, y, s)
   };

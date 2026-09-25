@@ -218,7 +218,7 @@ export function mount(root, app, params) {
   }
 
   /* ── 이벤트 ── */
-  function act(el) {
+  function act(el, kb) {
     S.msg = '';
     if (el.dataset.atom !== undefined) {
       const i = +el.dataset.atom;
@@ -234,7 +234,8 @@ export function mount(root, app, params) {
       if (r.error) { S.msg = r.error; paintTools(); return; }
       S.pick = S.tool === 'add' ? i : null;
       commit(r.mol, S.tool === 'add' ? S.sel : null);
-      const again = q(`.svgwrap [data-atom="${i}"]`); if (again) again.focus({ preventScroll: true });
+      /* 키보드로 눌렀을 때만 같은 원자로 초점을 되돌린다 (마우스일 때 큰 그림에서 초점을 옮기면 화면 계산이 한 번 더 들어 느려짐) */
+      if (kb) { const again = q(`.svgwrap [data-atom="${i}"]`); if (again) again.focus({ preventScroll: true }); }
     } else if (el.dataset.bond !== undefined) {
       const k = +el.dataset.bond;
       if (S.tool === 'bond') { const r = cycleBond(S.mol, k); if (r.error) { S.msg = r.error; paintTools(); return; } commit(r.mol); }
@@ -249,7 +250,7 @@ export function mount(root, app, params) {
   q('.svgwrap').addEventListener('click', e => { const el = e.target.closest('[data-atom], [data-bond]'); if (el) act(el); });
   q('.svgwrap').addEventListener('keydown', e => {
     const el = e.target.closest('[data-atom]'); if (!el) return;
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el, true); }
   });
   const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; S.cip = null; commit(fromSmiles(t.smi), null, true); };
   root.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
@@ -297,9 +298,11 @@ export function mount(root, app, params) {
   document.addEventListener('keydown', onKey);
   const offLang = onLang(() => render(false));
 
+  /* 뒤 배경의 3D 분자는 흐릿하게만 보이므로 가벼운 모드로 (3D 보기를 켜면 원래대로) */
+  if (app.scene) app.scene.setLite(true);
   render('first');
   return {
-    unmount() { clearTimeout(cmpTimer); offLang(); document.removeEventListener('keydown', onKey); app.focus3d(false); if (app.scene) { app.scene.setFocus(false); app.scene.setShowH(true); } },
+    unmount() { clearTimeout(cmpTimer); offLang(); document.removeEventListener('keydown', onKey); app.focus3d(false); if (app.scene) { app.scene.setLite(false, false); app.scene.setFocus(false); app.scene.setShowH(true); } },
     report: () => ({ '분자 SMILES': toSmiles(S.mol), '이름': cur && cur.res ? cur.res.nameEn : cur && cur.err ? '(이름 못 지음) ' + cur.err : '', '도구': S.tool === 'add' ? '붙이기 ' + S.sel : S.tool })
   };
 }

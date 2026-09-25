@@ -87,13 +87,15 @@ export function rankBranches(mol, c) {
   return sorted;
 }
 /* 입체중심: sp3 탄소, 치환기 넷이 모두 다름. 같은 분자(구조가 그대로면)는 다시 계산하지 않는다 */
-const SC = new WeakMap();
+/* 구조(원자 · 결합)가 같으면 결과도 같으므로 구조 문자열로 기억한다 — 거울상 · 옛 규칙 이름을 지을 때도, 복사한 분자에도 그대로 쓴다 */
+const SC = new Map();
 function scCache(mol) {
   const sig = mol.atoms.map(a => a.el + a.h).join() + '|' + mol.bonds.map(b => b.a + '-' + b.b + ':' + b.o).join();
-  const hit = SC.get(mol);
-  if (hit && hit.sig === sig) return hit;
-  const v = { sig, ...stereocentersRaw(mol) };
-  SC.set(mol, v);
+  let v = SC.get(sig);
+  if (v) { SC.delete(sig); SC.set(sig, v); return v; }
+  v = stereocentersRaw(mol);
+  SC.set(sig, v);
+  if (SC.size > 400) SC.delete(SC.keys().next().value);
   return v;
 }
 export function stereocenters(mol) { return scCache(mol).list.slice(); }
