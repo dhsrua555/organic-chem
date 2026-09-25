@@ -6,7 +6,7 @@ RDLogger.DisableLog('rdApp.*')
 random.seed(7)
 rows = []
 for f in sys.argv[2:]:
-    for line in Path(f).read_text(encoding='utf-8').splitlines():
+    for line in [l for l in Path(f).read_text(encoding="utf-8").splitlines() if not l.startswith("#")]:
         subs, name, mb = line.split('\t')
         if subs.count(':') <= 2: rows.append((name, mb.replace('|', '\n')))
 seen = {}; 

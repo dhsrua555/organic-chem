@@ -1,5 +1,6 @@
 /* HEXA 유기화학: 부팅 · 경로(#home #build #groups #rules #quiz) · 메뉴 · 아래 HUD */
 import { $, $$, store, getLang, setLang, mq } from './ui.js';
+import { startFx } from './fx.js';
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
 const low = mq('(pointer: coarse)') || Math.min(innerWidth, innerHeight) < 700;
@@ -16,6 +17,7 @@ requestAnimationFrame(tick);
 const PAGES = {
   home: () => import('./pages/home.js'),
   build: () => import('./pages/build.js'),
+  react: () => import('./pages/react.js'),
   groups: () => import('./pages/groups.js'),
   rules: () => import('./pages/rules.js'),
   quiz: () => import('./pages/quiz.js')
@@ -26,6 +28,7 @@ function anchorFor(route, narrow = innerWidth < 900) {
   const A = {
     home: narrow ? { x: 0, y: 0.4, scale: 0.6, dim: 1 } : { x: -0.4, y: 0.0, scale: 0.9, dim: 1 },
     build: narrow ? { x: 0, y: 0.1, scale: 1.3, dim: 0.16 } : { x: -0.02, y: -0.28, scale: 1.8, dim: 0.18 },
+    react: narrow ? { x: 0.45, y: -0.5, scale: 0.42, dim: 0.3 } : { x: 0.66, y: -0.45, scale: 0.5, dim: 0.5 },
     groups: narrow ? { x: 0.42, y: 0.6, scale: 0.42, dim: 0.6 } : { x: 0.62, y: 0.36, scale: 0.6, dim: 0.95 },
     rules: narrow ? { x: 0.42, y: 0.6, scale: 0.45, dim: 0.5 } : { x: 0.5, y: 0.34, scale: 0.8, dim: 0.85 },
     quiz: narrow ? { x: 0, y: 0.1, scale: 1.2, dim: 0.08 } : { x: -0.8, y: -0.45, scale: 0.75, dim: 0.22 }
@@ -37,7 +40,7 @@ let current = null, currentRoute = null, navParams = null;
 const app = {
   get scene() { return scene; },
   go(route, params) { navParams = params || null; if (location.hash === '#' + route) render(); else location.hash = route; },
-  setMol(entry, opts) { if (scene && entry) scene.setMolecule(entry.mol, entry.res, opts); },
+  setMol(entry, opts) { if (scene && entry && entry.mol) scene.setMolecule(entry.mol, entry.res, opts || {}); },
   anchor(a) { if (scene) scene.setAnchor(Object.assign({}, anchorFor(currentRoute), a || {})); },
   focus3d(on) { document.body.classList.toggle('focus3d', !!on); }
 };
@@ -64,7 +67,7 @@ async function render() {
   if (scene) scene.setAnchor(anchorFor(route));
   current = mod.mount(view, app, params) || null;
   $$('.menu-list a').forEach(a => { if (a.getAttribute('href') === '#' + route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  const t = { home: 'HEXA 유기화학', build: '분자 조립 · HEXA', groups: '작용기 도감 · HEXA', rules: '명명법 · HEXA', quiz: '이름 맞히기 · HEXA' }[route];
+  const t = { home: 'HEXA 유기화학', build: '분자 조립 · HEXA', react: '반응 예측 · HEXA', groups: '작용기 도감 · HEXA', rules: '명명법 · HEXA', quiz: '퀴즈 · HEXA' }[route];
   document.title = t;
 }
 
@@ -117,6 +120,7 @@ motionBtn.addEventListener('click', () => { motion = !motion; store.set('motion'
 
 /* ── 부팅 ─────────────────────── */
 async function boot() {
+  startFx({ reduce });
   try {
     const { createScene } = await import('./scene.js');
     target = 70;
@@ -132,7 +136,7 @@ async function boot() {
   /* 긴 글 페이지: 내려 읽기 시작하면 3D 분자를 흐리게 (글자와 겹치지 않도록) */
   let lastDim = 1;
   window.addEventListener('scroll', () => {
-    if (!scene || !['groups', 'rules'].includes(currentRoute) || !menu.hidden) return;
+    if (!scene || !['groups', 'rules', 'react'].includes(currentRoute) || !menu.hidden) return;
     const f = Math.max(0.22, 1 - window.scrollY / 420);
     if (Math.abs(f - lastDim) < 0.02) return;
     lastDim = f;

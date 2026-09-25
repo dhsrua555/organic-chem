@@ -1,29 +1,32 @@
 /* 명명법: 다섯 단계를 예시 분자 하나로 따라가고, 우선순위 · 어근 · 벤젠 · 한글 이름 표를 붙인다 */
 import { GROUP_INFO } from '../data.js';
 import { drawMolecule } from '../draw.js';
-import { molecule, tokensHTML, esc, getLang, onLang } from '../ui.js';
+import { molecule, tokensHTML, esc, getLang, onLang, store } from '../ui.js';
 
+const b = s => `<b>${s}</b>`, code = s => `<code>${s}</code>`;
 const STEMS = [['1', 'meth-', '메트 (메테인 · 메탄올)'], ['2', 'eth-', '에트 (에테인 · 에탄올)'], ['3', 'prop-', '프로프 (프로페인 · 프로판올)'], ['4', 'but-', '뷰트 (뷰테인 · 뷰탄올)'],
   ['5', 'pent-', '펜트'], ['6', 'hex-', '헥스'], ['7', 'hept-', '헵트'], ['8', 'oct-', '옥트'], ['9', 'non-', '논'], ['10', 'dec-', '데크']];
 
 export function mount(root, app) {
-  const EX = ['propene', { 3: 'OH', 4: 'CH3' }];
-  function draw(scaf, subs, o = {}) { const m = molecule(scaf, subs); return { m, svg: drawMolecule(m.mol, m.res, Object.assign({ hideH: true }, o)) }; }
+  const EX = 'C=CC(C)O';
+  function draw(smi, o = {}) { const m = molecule(smi); return { m, svg: drawMolecule(m.mol, m.res, Object.assign({ mode: store.get('drawMode', 'atoms') }, o)) }; }
   function nm(m) { return getLang() === 'ko' ? tokensHTML(m.res.ko) : tokensHTML(m.res.en); }
   function nm2(m) { return esc(getLang() === 'ko' ? m.res.nameEn : m.res.nameKo); }
 
   function render() {
-    const ex = draw(...EX);
-    const ex0 = draw(...EX, { chain: false, locants: false });
-    const exChain = draw(...EX, { locants: false });
-    const pre = draw('propane', { 0: 'Cl', 3: 'Br' });
-    const Z = draw('ethene', { 0: 'COOH', 2: 'COOH' }, { locants: false, chain: false }), E = draw('ethene', { 0: 'COOH', 3: 'COOH' }, { locants: false, chain: false });
-    const benz = [['OH'], ['NH2'], ['COOH'], ['CHO'], ['CN'], ['CONH2'], ['COOCH3'], ['CH3'], ['OCH3'], ['COCH3']].map(([g]) => draw('benzene', { 0: g }, { locants: false }));
-    const omp = [[1, 'ortho'], [2, 'meta'], [3, 'para']].map(([p, w]) => ({ w, ...draw('benzene', { 0: 'OH', [p]: 'Cl' }) }));
-    const len = draw('propene', { 2: 'COCH3', 3: 'CH3' });
+    const ex = draw(EX);
+    const ex0 = draw(EX, { chain: false, locants: false });
+    const exChain = draw(EX, { locants: false });
+    const pre = draw('CC(Br)CCl');
+    const Z = draw('OC(=O)/C=C\C(=O)O', { locants: false, chain: false }), E = draw('OC(=O)/C=C/C(=O)O', { locants: false, chain: false });
+    const benz = ['Oc1ccccc1', 'Nc1ccccc1', 'OC(=O)c1ccccc1', 'O=Cc1ccccc1', 'N#Cc1ccccc1', 'NC(=O)c1ccccc1', 'COC(=O)c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', 'CC(=O)c1ccccc1'].map(sm => ({ sm, ...draw(sm, { locants: false }) }));
+    const omp = [['Oc1ccccc1Cl', 'ortho'], ['Oc1cccc(Cl)c1', 'meta'], ['Oc1ccc(Cl)cc1', 'para']].map(([sm, w]) => ({ w, ...draw(sm) }));
+    const len = draw('C=C(CC)C(C)=O');
+    const rc = draw('CCCCCCCCc1ccccc1', { locants: false });
+    const yne = draw('C=CC#C');
     root.innerHTML = `<section class="page">
       <div class="rules-hero">
-        <p class="eyebrow"><span class="bar"></span>03 — NOMENCLATURE</p>
+        <p class="eyebrow"><span class="bar"></span>04 — NOMENCLATURE</p>
         <h1 class="title">NOMENCLATURE<small>명명법 다섯 단계</small></h1>
         <p class="lead">IUPAC 이름은 규칙을 정해진 순서대로 적용하면 하나로 정해집니다. 예시 분자 ${ex.m.res.nameEn.replace(/.*/, s => `<code>${esc(s)}</code>`)} 로 다섯 단계를 따라가 봅니다.</p>
         <p class="scroll-hint">SCROLL TO DISCOVER</p>
@@ -57,7 +60,7 @@ export function mount(root, app) {
       </tbody></table></div>
 
       <div class="sec-h"><h2>Benzene</h2><p>벤젠에 하나 붙으면 고유 이름이 모체가 됩니다</p></div>
-      <div class="pairs">${benz.map(x => `<button class="pair panel ex" type="button" data-open='${JSON.stringify([x.m.mol.scaf, x.m.mol.subs])}' style="grid-template-rows:auto auto">${x.svg}<p class="pn">${nm(x.m)}</p><p>${nm2(x.m)}${x.m.common ? ' · 관용명 ' + esc(x.m.common.ko) : ''}</p></button>`).join('')}</div>
+      <div class="pairs">${benz.map(x => `<button class="pair panel ex" type="button" data-open="${esc(x.sm)}" style="grid-template-rows:auto auto">${x.svg}<p class="pn">${nm(x.m)}</p><p>${nm2(x.m)}${x.m.common ? ' · 관용명 ' + esc(x.m.common.ko) : ''}</p></button>`).join('')}</div>
       <p class="hint">둘 이상 붙으면 주 작용기 탄소가 1번이 되고, 나머지는 번호가 가장 작아지는 방향으로 셉니다. 두 개일 때 관용명은 o-(1,2) · m-(1,3) · p-(1,4).</p>
       <div class="pairs" style="margin-top:14px">${omp.map(x => `<div class="pair panel">${x.svg}<p class="pn">${nm(x.m)}</p><p>${x.w} · ${esc(x.m.common ? x.m.common.en : '')}</p></div>`).join('')}</div>
 
@@ -81,17 +84,19 @@ export function mount(root, app) {
       <div class="rule-step" style="border-top:0;padding-top:0">
         <div><p>IUPAC 2013 권고는 <b>사슬 길이를 이중결합보다 먼저</b> 봅니다. 대부분의 교과서(옛 규칙)는 이중결합을 품은 사슬을 먼저 골랐기 때문에 이름이 달라지는 분자가 있습니다.</p>
           <ul><li>2013: ${esc(len.m.res.nameEn)} (사슬 5개 + methylidene)</li><li>옛 규칙: ${esc(len.m.res.alt1993 ? len.m.res.alt1993.en : '')} (이중결합을 품은 사슬 4개)</li></ul>
+          <p>고리와 사슬도 달라졌습니다. 2013 권고는 주 작용기 수가 같으면 ${b('고리를 모체')}로 합니다: ${code(esc(rc.m.res.nameEn))}. 옛 규칙은 탄소가 많은 쪽을 모체로 해 ${code(esc(rc.m.res.alt1993 ? rc.m.res.alt1993.en : ''))} 로 불렀습니다.</p>
+          <p>이중결합과 삼중결합이 함께 있으면 둘을 합쳐 가장 작은 번호를 주고, 비기면 이중결합이 작은 번호를 받습니다: ${code(esc(yne.m.res.nameEn))}.</p>
           <p>이 앱은 2013 규칙으로 이름을 짓고, 두 규칙이 다르면 결과 아래에 옛 이름도 함께 알려 줍니다. 번호는 <code>propan-2-ol</code> 처럼 해당 자리 바로 앞에 씁니다 (옛 표기 2-propanol).</p></div>
         <div class="rule-ex panel">${len.svg}<p class="nm-line">${nm(len.m)}</p></div>
       </div>
     </section>`;
-    root.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { const [s, subs] = JSON.parse(b.dataset.open); app.go('build', { scaf: s, subs }); }));
+    root.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => app.go('build', { smiles: b.dataset.open })));
   }
   function step(n, en, ko, body, ex, custom) {
     return `<div class="rule-step"><span class="n">${n}</span><div><h3>${en}<small>${ko}</small></h3>${body}</div>
       ${custom || `<div class="rule-ex panel ticks">${ex.svg}<p class="nm-line">${nm(ex.m)}</p></div>`}</div>`;
   }
-  app.setMol(molecule(...EX));
+  app.setMol(molecule(EX));
   render();
   const off = onLang(render);
   return { unmount() { off(); } };

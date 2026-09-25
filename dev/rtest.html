@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>반응 예측 시험</title>
+<pre id="out"></pre>
+<script type="module">
+import { parseSmiles } from '../js/chem/core.js';
+import { layout } from '../js/chem/layout.js';
+import { predict } from '../js/chem/reactions.js';
+
+/* [기질 SMILES, 반응 id, 주생성물 이름들('|' 로 여럿), 부생성물 이름들 | 'none' = 반응 없음] */
+const CASES = [
+  ['CCBr', 'nai', 'iodoethane'], ['CCCBr', 'nacn', 'butanenitrile'], ['CC(C)Br', 'naoh', 'prop-1-ene', 'propan-2-ol'],
+  ['CC(C)(C)Br', 'naome', '2-methylprop-1-ene'], ['CCC(C)Br', 'naome', '(E)-but-2-ene', '(Z)-but-2-ene|but-1-ene|2-methoxybutane'],
+  ['CCC(C)Br', 'tbuok', 'but-1-ene'], ['CC(C)(C)Br', 'h2o', '2-methylpropan-2-ol', '2-methylprop-1-ene'],
+  ['CC(C)C(C)Br', 'h2o', '2-methylbutan-2-ol', '3-methylbutan-2-ol|2-methylbut-2-ene'], ['CCBr', 'h2o', 'none'], ['CC(C)(C)Br', 'nai', 'none'],
+  ['CBr', 'tbuok', '2-methoxy-2-methylpropane'], ['BrCc1ccccc1', 'nacn', '2-phenylethanenitrile'], ['CCCCBr', 'nh3', 'butan-1-amine'],
+  ['CC(C)(C)O', 'hbr_alc', '2-bromo-2-methylpropane'], ['CCCO', 'pbr3', '1-bromopropane'], ['CCCO', 'socl2', '1-chloropropane'],
+  ['CC(O)CC', 'h2so4', '(E)-but-2-ene', '(Z)-but-2-ene|but-1-ene'], ['CCCO', 'pcc', 'propanal'], ['CCCO', 'jones', 'propanoic acid'],
+  ['CC(O)C', 'pcc', 'propan-2-one'], ['CC(C)(C)O', 'pcc', 'none'], ['CC(C)C(C)O', 'hbr_alc', '2-bromo-2-methylbutane', '2-bromo-3-methylbutane'],
+  ['OCc1ccccc1', 'nah', '(methoxymethyl)benzene'], ['OC1CCCCC1', 'h2so4', 'cyclohexene'],
+  ['CC=C', 'hbr', '2-bromopropane'], ['CC=C', 'hbrroor', '1-bromopropane'], ['CC=C', 'hydration', 'propan-2-ol'], ['CC=C', 'hydrobor', 'propan-1-ol'],
+  ['CC=C', 'oxymerc', 'propan-2-ol'], ['CC=C', 'br2', '1,2-dibromopropane'], ['CC=C', 'halohydrin', '1-bromopropan-2-ol'], ['CC=C', 'h2pd', 'propane'],
+  ['CC=C', 'mcpba', '2-methyloxirane'], ['CC=C', 'oso4', 'propane-1,2-diol'], ['CC=C', 'o3', 'ethanal|methanal'],
+  ['CC(C)(C)C=C', 'hbr', '2-bromo-2,3-dimethylbutane', '3-bromo-2,2-dimethylbutane'], ['C1=CCCCC1', 'br2', '1,2-dibromocyclohexane'],
+  ['C1=CCCCC1', 'o3', 'hexanedial'], ['CC(C)=CC', 'hydrobor', '3-methylbutan-2-ol'], ['CC(C)=C', 'hbr', '2-bromo-2-methylpropane'],
+  ['CC#C', 'lindlar', 'prop-1-ene'], ['CC#CC', 'lindlar', '(Z)-but-2-ene'], ['CC#CC', 'nanh3', '(E)-but-2-ene'], ['CC#CC', 'yne_h2', 'butane'],
+  ['CCC#C', 'yne_hyd', 'butan-2-one'], ['CCC#C', 'yne_hb', 'butanal'], ['CCC#C', 'yne_alk', 'pent-2-yne'], ['CCC#C', 'yne_hbr', '2,2-dibromobutane'],
+  ['CCC=O', 'nabh4', 'propan-1-ol'], ['CC(=O)OC', 'nabh4', 'none'], ['CC(=O)OC', 'lialh4', 'ethanol', 'methanol'], ['CC(C)=O', 'mgme', '2-methylpropan-2-ol'],
+  ['CC=O', 'mgph', '1-phenylethan-1-ol'], ['CC(=O)OC', 'mgme', '2-methylpropan-2-ol', 'methanol'], ['OCCC=O', 'mgme', 'OCCC=O?', 'methane'],
+  ['CC(C)=O', 'wittig', '2-methylprop-1-ene'], ['CCC#N', 'lialh4', 'propan-1-amine'], ['CCC(=O)OC', 'dibal', 'propanal', 'methanol'], ['CCC(C)=O', 'wk', 'butane'],
+  ['CC(=O)O', 'fischer', 'methyl ethanoate'], ['CC(=O)O', 'socl2_acid', 'ethanoyl chloride'], ['CC(=O)Cl', 'acyl_nh3', 'ethanamide'],
+  ['CC(=O)Cl', 'acyl_meoh', 'methyl ethanoate'], ['CC(=O)Cl', 'acyl_mena', 'N-methylethanamide'], ['CCOC(C)=O', 'sapon', 'ethanoic acid', 'ethanol'],
+  ['CC#N', 'nitrile_hyd', 'ethanoic acid'],
+  ['c1ccccc1', 'hno3', 'nitrobenzene'], ['Cc1ccccc1', 'br2fe', '1-bromo-4-methylbenzene', '1-bromo-2-methylbenzene'],
+  ['[O-][N+](=O)c1ccccc1', 'br2fe', '1-bromo-3-nitrobenzene'], ['COc1ccccc1', 'fcacyl', '1-(4-methoxyphenyl)ethan-1-one', '1-(2-methoxyphenyl)ethan-1-one'],
+  ['[O-][N+](=O)c1ccccc1', 'fcacyl', 'none'], ['Nc1ccccc1', 'br2fe', '2,4,6-tribromoaniline'], ['Cc1ccccc1', 'kmno4', 'benzoic acid'],
+  ['CC(C)(C)c1ccccc1', 'kmno4', 'none'], ['Cc1ccc(cc1)[N+](=O)[O-]', 'nitrored', '4-methylaniline'], ['Cc1ccc(C)cc1', 'hno3', '1,4-dimethyl-2-nitrobenzene'],
+  ['CCC', 'br2hv', '2-bromopropane', '1-bromopropane'], ['CCC', 'cl2hv', '2-chloropropane', '1-chloropropane'], ['CC(C)C', 'br2hv', '2-bromo-2-methylpropane', '1-bromo-2-methylpropane'],
+  ['CC=O', 'aldol', '3-hydroxybutanal'], ['CC=O', 'aldolheat', '(E)-but-2-enal'], ['CCOC(C)=O', 'claisen', 'ethyl 3-oxobutanoate', 'ethanol'],
+  ['C=CC=C', 'da_eth', 'cyclohexene'], ['C=CC=C', 'da_acr', 'methyl cyclohex-3-ene-1-carboxylate'], ['Brc1ccccc1', 'suzuki', '1,1′-biphenyl'],
+  ['Brc1ccccc1', 'heck', 'methyl (E)-3-phenylprop-2-enoate'], ['Brc1ccccc1', 'sono', '(2-phenylethynyl)benzene'], ['Brc1ccccc1', 'buchwald', 'N,N-dimethylaniline'],
+  ['C=CCCCC=C', 'grubbs', 'cyclopentene', 'ethene'], ['C=CCCC', 'grubbs', '(E)-oct-4-ene', 'ethene']
+];
+const out = [];
+let pass = 0, fail = 0;
+for (const [smi, id, major, minor] of CASES) {
+  let res;
+  try { const m = parseSmiles(smi); layout(m); res = predict(m, id); }
+  catch (e) { out.push(`CRASH ${smi} + ${id}: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`); fail++; continue; }
+  const names = res.products.map(p => `${p.role}:${p.name ? p.name.nameEn : '?' + p.err}${p.pct ? ' ' + p.pct + '%' : ''}`);
+  let ok;
+  if (major === 'none') ok = !res.ok;
+  else if (major.endsWith('?')) ok = !!res.warn;
+  else {
+    const maj = res.products.filter(p => p.role === 'major').map(p => p.name && p.name.nameEn);
+    const all = res.products.map(p => p.name && p.name.nameEn);
+    ok = major.split('|').every(n => maj.includes(n) || (major.split('|').length > 1 && all.includes(n))) && (!minor || minor.split('|').every(n => all.includes(n)));
+  }
+  if (ok) pass++; else fail++;
+  out.push(`${ok ? 'ok  ' : 'FAIL'} ${smi.padEnd(26)} ${id.padEnd(12)} ${res.ok ? names.join(' | ') : '반응 없음: ' + res.reason}${ok ? '' : '   ← want ' + major + (minor ? ' / ' + minor : '')}`);
+}
+out.push(`\n${pass} passed, ${fail} failed`);
+out.push(fail ? 'RESULT: FAIL' : 'RESULT: ALL OK');
+document.getElementById('out').textContent = out.join('\n');
+window.__done = true;
+</script>

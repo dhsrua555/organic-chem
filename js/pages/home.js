@@ -19,7 +19,7 @@ export function mount(root, app) {
   function show(k) {
     i = (k + SLIDES.length) % SLIDES.length;
     const s = SLIDES[i];
-    const m = molecule(...s.mol);
+    const m = molecule(s.mol);
     const nm = getLang() === 'ko' ? m.res.nameKo : m.res.nameEn;
     st.classList.remove('slide-anim'); void st.offsetWidth; st.classList.add('slide-anim');
     st.innerHTML = `<h1 class="title">${s.en}<small>${s.ko}</small></h1>

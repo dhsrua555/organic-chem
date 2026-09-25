@@ -1,6 +1,6 @@
 /* CIP 우선순위: 원자번호를 구(球)마다 비교한다. 다중결합은 복제 원자로 펼친다.
    E/Z (이중결합 양쪽의 높은 순위 치환기가 같은 쪽이면 Z) 와 입체중심(서로 다른 치환기 넷) 판정에 쓴다. */
-import { ELEMENTS } from './mol.js';
+import { ELEMENTS } from './core.js';
 
 const Z = el => ELEMENTS[el].z;
 
@@ -92,6 +92,7 @@ export function doubleBondStereo(mol) {
   const out = [];
   for (const bd of mol.bonds) {
     if (bd.o !== 2 || bd.arom) continue;
+    if (inSmallRing(mol, bd.a, bd.b)) continue;
     const A = mol.atoms[bd.a], B = mol.atoms[bd.b];
     if (A.el !== 'C' || B.el !== 'C') continue;
     const hiA = higherSide(mol, bd.a, bd.b), hiB = higherSide(mol, bd.b, bd.a);
@@ -101,19 +102,38 @@ export function doubleBondStereo(mol) {
   return out;
 }
 
-/* 이중결합 c=d 에서 c 쪽 두 치환기 중 높은 것이 결합 축의 어느 쪽(+1/-1)에 있는지. 같으면 null */
+/* 8원자 이하 고리 안의 이중결합은 cis 로만 존재하므로 E/Z 를 붙이지 않는다 */
+function inSmallRing(mol, a, b) {
+  const seen = new Set([a]); let frontier = [[a, 0]];
+  while (frontier.length) {
+    const next = [];
+    for (const [i, d] of frontier) for (const { j } of mol.nb[i]) {
+      if (i === a && j === b) continue;
+      if (j === b) return d + 1 <= 7;
+      if (!seen.has(j) && d < 7) { seen.add(j); next.push([j, d + 1]); }
+    }
+    frontier = next;
+  }
+  return false;
+}
+
+/* 이중결합 c=d 에서 c 쪽 두 치환기 중 높은 것이 결합 축의 어느 쪽(+1/-1)에 있는지. 같으면 null.
+   수소는 좌표가 없지만 늘 순위가 가장 낮으므로, 무거운 치환기 하나 + 수소면 그 무거운 쪽이 높다 */
 function higherSide(mol, c, d) {
   const subs = [];
   for (const { j } of mol.nb[c]) if (j !== d) subs.push({ node: { atom: j, from: c, z: Z(mol.atoms[j].el), dup: false, path: [c] }, pos: [mol.atoms[j].x, mol.atoms[j].y] });
-  /* 수소 자리 좌표는 뼈대의 빈 자리에서 가져온다 */
-  for (const s of mol.sites) if (s.atom === c && !s.group) subs.push({ node: { atom: -1, z: 1, dup: false }, pos: [s.x, s.y] });
-  if (subs.length !== 2) return null;
-  const r = compareBranch(mol, subs[0].node, subs[1].node);
-  if (r === 0) return null;
-  const hi = r > 0 ? subs[0] : subs[1];
+  if (!subs.length || subs.length + mol.atoms[c].h !== 2) return null;
+  let hi;
+  if (subs.length === 1) hi = subs[0];
+  else {
+    const r = compareBranch(mol, subs[0].node, subs[1].node);
+    if (r === 0) return null;
+    hi = r > 0 ? subs[0] : subs[1];
+  }
   const C = mol.atoms[c], D = mol.atoms[d];
   /* 두 탄소 모두 같은 기준(c→d 가 아니라 번호 작은 원자 → 큰 원자)으로 쪽을 잰다 */
   const [P, Q] = c < d ? [C, D] : [D, C];
   const cross = (Q.x - P.x) * (hi.pos[1] - P.y) - (Q.y - P.y) * (hi.pos[0] - P.x);
+  if (Math.abs(cross) < 1e-3) return null; /* 일직선: 판단 불가 */
   return cross > 0 ? 1 : -1;
 }

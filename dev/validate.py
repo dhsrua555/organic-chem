@@ -9,7 +9,7 @@ JAR = Path(__file__).parent / 'tools' / 'opsin.jar'
 
 rows = []
 for f in sys.argv[1:]:
-    for line in Path(f).read_text(encoding='utf-8').splitlines():
+    for line in [l for l in Path(f).read_text(encoding="utf-8").splitlines() if not l.startswith("#")]:
         subs, name, mb = line.split('\t')
         rows.append((Path(f).stem, subs, name, mb.replace('|', '\n')))
 names = [r[2].replace('′', "'").replace('″', "''") for r in rows]

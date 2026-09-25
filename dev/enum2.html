@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>이름 엔진 무작위 검사용 목록</title>
+<pre id="out"></pre>
+<script type="module">
+import { molblock, toSmiles } from '../js/chem/core.js';
+import { nameMolecule } from '../js/chem/name.js';
+import { FRAGMENTS, TEMPLATES, fromSmiles, attach, cycleBond, flipEZ } from '../js/chem/edit.js';
+/* ?n=2000&seed=1&max=6 : 뼈대에서 시작해 조각 붙이기 · 결합 바꾸기를 무작위로 max 번까지 */
+const q = new URLSearchParams(location.search);
+const N = +(q.get('n') || 1000), MAX = +(q.get('max') || 6);
+let seed = +(q.get('seed') || 1);
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const pick = a => a[Math.floor(rnd() * a.length)];
+const frags = Object.keys(FRAGMENTS);
+const weights = { CH3: 6, C2H5: 2, vinyl: 1, ethynyl: 1, phenyl: 1, cyclohexyl: 1, cyclopropyl: 0.5, OH: 3, oxo: 1.5, OCH3: 1.5, OAc: 1, NH2: 2, NO2: 1, CN: 1, CHO: 1, COCH3: 1, COOH: 1.5, COOCH3: 1, COCl: 0.5, CONH2: 1, F: 1, Cl: 1.5, Br: 1, I: 0.5 };
+const wlist = frags.flatMap(f => Array(Math.round((weights[f] || 1) * 2)).fill(f));
+const bases = TEMPLATES.filter(t => t.kind === 'base');
+const lines = [], stats = { ok: 0, err: {} };
+for (let t = 0; t < N; t++) {
+  let m = fromSmiles(pick(bases).smi);
+  const steps = 1 + Math.floor(rnd() * MAX);
+  const log = [];
+  for (let s = 0; s < steps; s++) {
+    const r = rnd();
+    let res;
+    if (r < 0.8) {
+      const cands = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0 && !m.atoms[i].q);
+      if (!cands.length) break;
+      const i = pick(cands), f = pick(wlist);
+      res = attach(m, i, f); log.push(f + '@' + i);
+    } else if (r < 0.93) {
+      const k = Math.floor(rnd() * m.bonds.length);
+      if (!m.bonds.length) continue;
+      res = cycleBond(m, k); log.push('bond' + k);
+    } else {
+      const ks = m.bonds.map((b, k) => k).filter(k => m.bonds[k].o === 2 && !m.bonds[k].arom);
+      if (!ks.length) continue;
+      res = flipEZ(m, pick(ks)); log.push('flip');
+    }
+    if (res && res.mol) m = res.mol;
+    if (m.atoms.length > 45) break;
+  }
+  let name;
+  try { name = nameMolecule(m).nameEn; stats.ok++; }
+  catch (e) { const k = e.name === 'NameError' || e.constructor.name === 'NameError' ? 'NE: ' + e.message : 'CRASH: ' + e.message; stats.err[k] = (stats.err[k] || 0) + 1; name = null; if (k.startsWith('CRASH')) lines.push('#CRASH ' + toSmiles(m) + ' ' + e.stack.split('\n').slice(0, 3).join(' | ')); }
+  if (name) lines.push(toSmiles(m) + '\t' + name + '\t' + molblock(m).replace(/\n/g, '|'));
+}
+lines.unshift('#STATS ' + JSON.stringify(stats));
+document.getElementById('out').textContent = lines.join('\n');
+window.__done = true;
+</script>

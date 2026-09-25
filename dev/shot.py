@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).parent))
 from run import serve, PORT
 OUT = Path(__file__).parent / 'out'
-routes = sys.argv[1:] or ['home', 'build', 'groups', 'rules', 'quiz']
+routes = sys.argv[1:] or ['home', 'build', 'react', 'groups', 'rules', 'quiz']
 DEV = {'desktop': dict(viewport={'width': 1440, 'height': 900}), 'mobile': dict(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)}
 srv = serve()
 with sync_playwright() as pw:

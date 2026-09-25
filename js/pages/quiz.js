@@ -1,108 +1,162 @@
-/* 퀴즈: 구조 → 이름 / 이름 → 구조. 오답 보기는 작용기 자리를 옮기거나 바꾼 "진짜 다른 분자" 의 이름이다 */
-import { SCAFFOLDS } from '../chem/mol.js';
+/* 퀴즈: 구조 → 이름 / 이름 → 구조 / 반응 → 주생성물.
+   오답 보기는 조각 자리를 옮기거나 바꾼 "진짜 다른 분자", 반응에서는 다른 시약 · 다른 방향의 생성물 */
+import { TEMPLATES, fromSmiles, attach } from '../chem/edit.js';
 import { steps } from '../chem/explain.js';
+import { REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { drawMolecule } from '../draw.js';
-import { molecule, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
+import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
 
 const UNSTABLE = ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
-const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'I'];
-const SCAF_W = ['benzene', 'benzene', 'benzene', 'propene', 'propene', 'propane', 'propane', 'ethene', 'ethane', 'methane'];
+const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'oxo', 'C2H5', 'vinyl', 'phenyl'];
+const BASES = TEMPLATES.filter(t => t.kind === 'base');
+const RX_SUBS = ['CCC(C)Br', 'CC(C)(C)Br', 'CCCBr', 'CC(C)C(C)Br', 'BrCc1ccccc1', 'CC(O)CC', 'CCCO', 'CC(C)(C)O', 'OC1CCCCC1', 'CC=C', 'CC(C)=CC', 'C1=CCCCC1', 'CC(C)(C)C=C',
+  'CCC#C', 'CC#CC', 'CCC=O', 'CC(=O)c1ccccc1', 'O=C1CCCCC1', 'CCOC(C)=O', 'CCC#N', 'CC(=O)O', 'CC(=O)Cl', 'c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', '[O-][N+](=O)c1ccccc1', 'CCC', 'CC(C)C', 'CC=O', 'C=CC=C', 'Brc1ccccc1'];
 
-function ok(m) {
-  return !(m.res.notes || []).some(n => UNSTABLE.includes(n.type)) && !m.res.alt1993 && m.res.nameEn.length <= 46;
+function ok(e) { return e.res && !(e.res.notes || []).some(n => UNSTABLE.includes(n.type)) && !e.res.alt1993 && e.res.nameEn.length <= 48; }
+function replay(base, recipe) {
+  let m = fromSmiles(base);
+  for (const [i, f] of recipe) { if (!m.atoms[i]) return null; const r = attach(m, i, f); if (!r.mol) return null; m = r.mol; }
+  return m;
 }
 function randomQ(level) {
-  for (let t = 0; t < 200; t++) {
-    const scaf = pick(SCAF_W), n = SCAFFOLDS[scaf].sites.length;
-    const k = level === 'easy' ? 1 + (Math.random() < 0.55 ? 1 : 0) : 2 + Math.floor(Math.random() * 3);
-    if (k > n) continue;
-    const sites = shuffle([...Array(n).keys()]).slice(0, k);
-    const subs = {}; sites.forEach(s => { subs[s] = pick(POOL); });
-    if (level === 'easy' && Object.values(subs).filter(g => g === 'CH3').length > 1) continue;
-    const m = molecule(scaf, subs);
-    if (!ok(m) || (level === 'easy' && !m.res.prefixes.length && !m.res.P)) continue;
-    return { scaf, subs, m };
-  }
-  return { scaf: 'propene', subs: { 3: 'OH' }, m: molecule('propene', { 3: 'OH' }) };
-}
-/* 헷갈리기 쉬운 이웃: 자리 옮기기 · 작용기 바꾸기 · 뼈대 바꾸기 */
-function distractors(q) {
-  const out = new Map(), n = SCAFFOLDS[q.scaf].sites.length;
-  const add = (scaf, subs) => { const m = molecule(scaf, subs); if (m.res.nameEn !== q.m.res.nameEn && ok(m) && !out.has(m.res.nameEn)) out.set(m.res.nameEn, { scaf, subs, m }); };
-  const keys = Object.keys(q.subs).map(Number);
-  for (let t = 0; t < 60 && out.size < 8; t++) {
-    const r = Math.random();
-    const subs = { ...q.subs };
-    const k = pick(keys);
-    if (r < 0.5) { const free = [...Array(n).keys()].filter(i => !(i in subs)); if (!free.length) continue; const g = subs[k]; delete subs[k]; subs[pick(free)] = g; add(q.scaf, subs); }
-    else if (r < 0.8) { subs[k] = pick(POOL); add(q.scaf, subs); }
-    else {
-      const alt = { propane: 'propene', propene: 'propane', ethane: 'ethene', ethene: 'ethane' }[q.scaf];
-      if (!alt) continue;
-      const m2 = {}; for (const [s, g] of Object.entries(subs)) if (+s < SCAFFOLDS[alt].sites.length) m2[s] = g;
-      add(alt, m2);
+  for (let t = 0; t < 300; t++) {
+    const base = pick(BASES).smi;
+    const k = level === 'easy' ? 1 + (Math.random() < 0.5 ? 1 : 0) : 2 + Math.floor(Math.random() * 3);
+    const recipe = [];
+    let m = fromSmiles(base);
+    for (let j = 0; j < k; j++) {
+      const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0 && m.atoms[i].el === 'C');
+      const i = pick(at), f = pick(POOL);
+      const r = attach(m, i, f); if (!r.mol) continue;
+      recipe.push([i, f]); m = r.mol;
     }
+    if (!recipe.length) continue;
+    const e = entry(m);
+    if (!ok(e)) continue;
+    return { base, recipe, e };
+  }
+  return null;
+}
+function distractors(q) {
+  const out = new Map();
+  const add = m => { if (!m) return; const e = entry(m); if (ok(e) && e.res.nameEn !== q.e.res.nameEn && !out.has(e.res.nameEn)) out.set(e.res.nameEn, { e }); };
+  for (let t = 0; t < 60 && out.size < 8; t++) {
+    const rec = q.recipe.map(x => x.slice());
+    const k = Math.floor(Math.random() * rec.length);
+    const r = Math.random();
+    if (r < 0.5) { const n = fromSmiles(q.base).atoms.length + k * 2; rec[k][0] = Math.floor(Math.random() * Math.max(2, n)); }
+    else if (r < 0.85) rec[k][1] = pick(POOL);
+    else { add(replay(pick(BASES).smi, rec)); continue; }
+    add(replay(q.base, rec));
   }
   return shuffle([...out.values()]).slice(0, 3);
 }
+function randomReact() {
+  for (let t = 0; t < 80; t++) {
+    const smi = pick(RX_SUBS);
+    const mol = fromSmiles(smi);
+    const okMap = applicable(mol);
+    const ids = REACTIONS.filter(r => okMap[r.id]).map(r => r.id);
+    if (!ids.length) continue;
+    const rid = pick(ids);
+    const res = predict(mol, rid);
+    const major = res.ok && res.products.find(p => p.role === 'major' && p.name);
+    if (!major || res.warn) continue;
+    const opts = new Map([[major.name.nameEn, { e: { mol: major.mol, res: major.name } }]]);
+    const addP = p => { if (p && p.name && !opts.has(p.name.nameEn) && p.role !== 'side') opts.set(p.name.nameEn, { e: { mol: p.mol, res: p.name } }); };
+    res.products.forEach(addP);
+    for (const other of shuffle(ids.filter(x => x !== rid))) {
+      if (opts.size >= 4) break;
+      const r2 = predict(mol, other);
+      if (r2.ok) addP(r2.products.find(p => p.role === 'major'));
+    }
+    const sub = entry(mol);
+    if (opts.size < 4 && sub.res && !opts.has(sub.res.nameEn)) opts.set(sub.res.nameEn, { e: sub, same: true });
+    if (opts.size < 3) continue;
+    const list = [...opts.values()].slice(0, 4);
+    const correct = list[0];
+    return { react: true, smi, rid, res, sub, e: correct.e, correct, opts: shuffle(list) };
+  }
+  return null;
+}
 
-export function mount(root, app) {
-  const S = { mode: store.get('quizMode', 'name'), level: store.get('quizLevel', 'easy'), score: store.get('quizScore', { right: 0, total: 0, streak: 0, best: 0 }), q: null, opts: [], done: false };
+export function mount(root, app, params) {
+  const S = { mode: (params && params.mode) || store.get('quizMode', 'name'), level: store.get('quizLevel', 'easy'), score: store.get('quizScore2', { right: 0, total: 0, streak: 0, best: 0 }), q: null, opts: [], done: false, chosen: null };
   root.innerHTML = `<section class="page"><div class="quiz">
-    <p class="eyebrow"><span class="bar"></span>04 — QUIZ</p>
-    <h1 class="title">QUIZ<small>이름 맞히기</small></h1>
+    <p class="eyebrow"><span class="bar"></span>05 — QUIZ</p>
+    <h1 class="title">QUIZ<small>이름 · 반응 퀴즈</small></h1>
     <div class="q-bar">
-      <div class="seg" role="group" aria-label="문제 방식"><button type="button" data-mode="name">구조 → 이름</button><button type="button" data-mode="struct">이름 → 구조</button></div>
-      <div class="seg" role="group" aria-label="난이도"><button type="button" data-level="easy">작용기 1–2개</button><button type="button" data-level="hard">2–4개</button></div>
+      <div class="seg" role="group" aria-label="문제 방식"><button type="button" data-mode="name">구조 → 이름</button><button type="button" data-mode="struct">이름 → 구조</button><button type="button" data-mode="react">반응 예측</button></div>
+      <div class="seg" role="group" aria-label="난이도"><button type="button" data-level="easy">조각 1–2개</button><button type="button" data-level="hard">2–4개</button></div>
       <p class="score" aria-live="polite"></p>
     </div>
     <div class="q-card panel ticks"></div>
   </div></section>`;
   const card = root.querySelector('.q-card');
+  const mode = () => store.get('drawMode', 'atoms');
 
   function paintBar() {
     root.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
-    root.querySelectorAll('[data-level]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.level === S.level)));
+    root.querySelectorAll('[data-level]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.level === S.level)); });
+    root.querySelector('.seg[aria-label="난이도"]').hidden = S.mode === 'react';
     const s = S.score;
     root.querySelector('.score').innerHTML = `<span>맞힘 <b>${s.right}</b> / ${s.total}</span><span>연속 <b>${s.streak}</b></span><span>최고 <b>${s.best}</b></span>`;
   }
-  const nameOf = m => getLang() === 'ko' ? m.res.nameKo : m.res.nameEn;
-  const small = m => drawMolecule(m.mol, m.res, { hideH: true, locants: false, chain: false, compact: true });
+  const nameOf = e => getLang() === 'ko' ? e.res.nameKo : e.res.nameEn;
+  const small = e => drawMolecule(e.mol, e.res, { mode: mode(), locants: false, chain: false, compact: true });
 
   function next() {
-    S.q = randomQ(S.level);
-    S.opts = shuffle([S.q, ...distractors(S.q)]);
     S.done = false; S.chosen = null;
-    app.setMol(S.q.m);
+    if (S.mode === 'react') {
+      const q = randomReact();
+      if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다. 다시 눌러 주세요.</p>'; return; }
+      S.q = q; S.opts = q.opts;
+      app.setMol(q.sub);
+    } else {
+      const q = randomQ(S.level);
+      if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다.</p>'; return; }
+      S.q = q; S.opts = shuffle([{ e: q.e }, ...distractors(q)]);
+      S.q.correct = S.opts.find(o => o.e === q.e);
+      app.setMol(q.e);
+    }
     draw();
   }
   function draw() {
-    const chosen = S.chosen, q = S.q, keys = ['A', 'B', 'C', 'D'];
-    const head = S.mode === 'name'
-      ? `<p class="q-prompt">이 분자의 IUPAC 이름은?</p><div class="q-struct">${small(q.m)}</div>`
-      : `<p class="q-prompt">이 이름의 구조는?</p><p class="q-name">${tokensHTML(getLang() === 'ko' ? q.m.res.ko : q.m.res.en)}</p>`;
+    const q = S.q, keys = ['A', 'B', 'C', 'D'], chosen = S.chosen;
+    let head;
+    if (S.mode === 'react') head = `<p class="q-prompt">주생성물은?</p><div class="q-rx">${small(q.sub)}<div class="rx-arrow"><span class="rx-reagent">${q.res.reaction.label}</span><svg viewBox="0 0 120 16" aria-hidden="true"><path d="M2 8h112M104 2l10 6-10 6"/></svg></div><span class="q-what">?</span></div>`;
+    else if (S.mode === 'name') head = `<p class="q-prompt">이 분자의 IUPAC 이름은?</p><div class="q-struct">${small(q.e)}</div>`;
+    else head = `<p class="q-prompt">이 이름의 구조는?</p><p class="q-name">${tokensHTML(getLang() === 'ko' ? q.e.res.ko : q.e.res.en)}</p>`;
     const opts = S.opts.map((o, i) => {
-      const cls = !S.done ? '' : o === q ? ' right' : o === chosen ? ' wrong' : '';
+      const cls = !S.done ? '' : o === q.correct ? ' right' : o === chosen ? ' wrong' : '';
+      const cap = S.done ? `<span class="q-cap">${esc(nameOf(o.e))}${o.same ? ' (반응 없음)' : ''}</span>` : '';
       return S.mode === 'name'
-        ? `<button class="q-opt${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''}><span class="k">${keys[i]}</span>${esc(nameOf(o.m))}</button>`
-        : `<button class="q-opt pic${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''} aria-label="보기 ${keys[i]}"><span class="k">${keys[i]}</span>${small(o.m)}</button>`;
+        ? `<button class="q-opt${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''}><span class="k">${keys[i]}</span>${esc(nameOf(o.e))}</button>`
+        : `<button class="q-opt pic${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''} aria-label="보기 ${keys[i]}"><span class="k">${keys[i]}</span>${small(o.e)}${cap}</button>`;
     }).join('');
     let fb = '';
     if (S.done) {
-      const right = chosen === q;
-      const st = steps(q.m.mol, q.m.res);
-      fb = `<div class="q-feedback">
-        <p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${esc(q.m.res.nameEn)} · ${esc(q.m.res.nameKo)}${q.m.common ? ` (${esc(q.m.common.ko)})` : ''}</p>
-        ${!right && chosen ? `<p class="note">고른 보기는 ${esc(chosen.m.res.nameEn)} — 작용기 자리나 종류가 다른 분자입니다.</p>` : ''}
-        <ol class="steps" style="padding:0">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol>
-        <div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">분자 조립에서 열기</button></div>
-      </div>`;
+      const right = chosen === q.correct;
+      const verdict = `<p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${esc(q.correct.e.res.nameEn)} · ${esc(q.correct.e.res.nameKo)}</p>`;
+      if (S.mode === 'react') {
+        const r = q.res;
+        fb = `<div class="q-feedback">${verdict}<p class="note">${esc(r.mech || '')}</p>
+          <ol class="steps" style="padding:0">${(r.steps || []).map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}</div></li>`).join('')}</ol>
+          ${r.select && r.select.length ? `<ul class="sel">${r.select.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
+          <div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">반응 예측에서 열기</button></div></div>`;
+      } else {
+        const st = steps(q.e.mol, q.e.res);
+        fb = `<div class="q-feedback">${verdict}
+          ${!right && chosen ? `<p class="note">고른 보기는 ${esc(chosen.e.res.nameEn)} — 작용기 자리나 종류가 다른 분자입니다.</p>` : ''}
+          <ol class="steps" style="padding:0">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol>
+          <div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">분자 조립에서 열기</button></div></div>`;
+      }
     }
     card.innerHTML = head + `<div class="q-opts">${opts}</div>` + fb;
     card.querySelectorAll('.q-opt').forEach(b => b.addEventListener('click', () => answer(S.opts[+b.dataset.i])));
     if (S.done) {
       card.querySelector('#q-next').addEventListener('click', next);
-      card.querySelector('#q-open').addEventListener('click', () => app.go('build', { scaf: q.scaf, subs: q.subs }));
+      card.querySelector('#q-open').addEventListener('click', () => S.mode === 'react' ? app.go('react', { smiles: q.smi, rid: q.rid }) : app.go('build', { mol: q.e.mol }));
       card.querySelector('#q-next').focus({ preventScroll: true });
     }
   }
@@ -111,8 +165,9 @@ export function mount(root, app) {
     S.done = true; S.chosen = o;
     const s = S.score;
     s.total++;
-    if (o === S.q) { s.right++; s.streak++; s.best = Math.max(s.best, s.streak); } else s.streak = 0;
-    store.set('quizScore', s);
+    if (o === S.q.correct) { s.right++; s.streak++; s.best = Math.max(s.best, s.streak); } else s.streak = 0;
+    store.set('quizScore2', s);
+    if (S.mode === 'react') app.setMol(S.q.correct.e);
     paintBar(); draw();
   }
   root.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('quizMode', S.mode); paintBar(); next(); }));

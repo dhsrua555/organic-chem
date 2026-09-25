@@ -1,171 +1,131 @@
-/* 3D 좌표: 이상적인 결합 길이 · 각도로 원자를 하나씩 놓고(Z-행렬 방식), 겹치는 곳만 살짝 밀어낸다.
-   이중결합 양쪽의 cis/trans 는 2D 그림에서 가져와 E/Z 가 그대로 유지된다. 단위 Å. */
+/* 3D 좌표: 2D 그림에서 출발해 결합 길이 · 결합각 · 이중결합의 평면(cis/trans)을 거리 제약으로 맞춘다.
+   사이클로헥세인은 저절로 주름진 모양이 되고, E/Z 는 2D 그대로 유지된다. 단위 Å */
+import { rings } from './core.js';
 
 const LEN = {
-  'C-C1': 1.53, 'C-C2': 1.34, 'C-C3': 1.20, 'C-Car': 1.39, 'C-H1': 1.09, 'C-O1': 1.43, 'C-O2': 1.22, 'C-N1': 1.47, 'C-N3': 1.16,
-  'O-H1': 0.97, 'N-H1': 1.01, 'C-F1': 1.35, 'C-Cl1': 1.77, 'C-Br1': 1.94, 'C-I1': 2.14, 'N-O1': 1.22, 'N-O2': 1.22
+  'CC1': 1.53, 'CC2': 1.34, 'CC3': 1.20, 'CH1': 1.09, 'CO1': 1.43, 'CO2': 1.22, 'CN1': 1.47, 'CN2': 1.28, 'CN3': 1.16,
+  'HO1': 0.97, 'HN1': 1.01, 'CF1': 1.35, 'CCl1': 1.77, 'CBr1': 1.94, 'CI1': 2.14, 'NO1': 1.22, 'NO2': 1.22, 'OO1': 1.47
 };
 function blen(e1, e2, o, arom) {
   if (arom) return 1.39;
-  const k1 = `${e1}-${e2}${o}`, k2 = `${e2}-${e1}${o}`;
-  return LEN[k1] || LEN[k2] || 1.45;
+  const k = [e1, e2].sort().join('') + o;
+  return LEN[k] || 1.45;
 }
-const v = {
-  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
-  mul: (a, s) => [a[0] * s, a[1] * s, a[2] * s], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
-  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
-  len: a => Math.hypot(a[0], a[1], a[2]), norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
-};
-function perp(u) { const t = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]; return v.norm(v.cross(u, t)); }
+const RAD = Math.PI / 180;
 
-/* 반환: { atoms: [{el, heavy(원래 번호 또는 -1), p:[x,y,z]}], bonds: [{a,b,o,arom}] } */
 export function embed3d(mol) {
-  const atoms = mol.atoms.map((a, i) => ({ el: a.el, heavy: i, x2: a.x, y2: a.y, p: null, q: a.q }));
+  const R = rings(mol);
+  const atoms = mol.atoms.map((a, i) => ({ el: a.el, heavy: i, q: a.q, p: [a.x * 1.5, a.y * 1.5, 0] }));
   const bonds = mol.bonds.map(b => ({ a: b.a, b: b.b, o: b.o, arom: !!b.arom }));
-  /* 수소를 실제 원자로: 뼈대의 빈 자리는 2D 좌표가 있다 */
+  const nbH = mol.atoms.map(() => []);
+  /* 수소 */
   mol.atoms.forEach((a, i) => {
-    const free = mol.sites.filter(s => s.atom === i && !s.group && a.src.kind === 'scaf');
     for (let k = 0; k < a.h; k++) {
-      const s = free[k];
-      atoms.push({ el: 'H', heavy: -1, x2: s ? s.x : null, y2: s ? s.y : null, p: null });
-      bonds.push({ a: i, b: atoms.length - 1, o: 1 });
+      atoms.push({ el: 'H', heavy: -1, p: [0, 0, 0] });
+      const hi = atoms.length - 1;
+      bonds.push({ a: i, b: hi, o: 1 });
+      nbH[i].push(hi);
     }
   });
+  const n = atoms.length;
   const nb = atoms.map(() => []);
   bonds.forEach(b => { nb[b.a].push({ j: b.b, o: b.o, arom: b.arom }); nb[b.b].push({ j: b.a, o: b.o, arom: b.arom }); });
   const hyb = i => {
     const a = atoms[i];
-    if (nb[i].some(n => n.arom)) return 2;
-    const pi = nb[i].reduce((s, n) => s + (n.o - 1), 0);
+    if (a.el === 'H') return 0;
+    if (nb[i].some(x => x.arom)) return 2;
+    const pi = nb[i].reduce((s, x) => s + (x.o - 1), 0);
+    if (pi >= 2) return 1;
+    if (pi === 1) return 2;
     if (a.el === 'N' && a.q === 1) return 2;
-    if (pi >= 2) return 1; if (pi === 1) return 2;
-    if (a.el === 'N' && nb[i].some(n => atoms[n.j].el === 'C' && nb[n.j].some(m => m.o === 2 && atoms[m.j].el === 'O'))) return 2; /* 아마이드 N */
+    if (a.el === 'N' && nb[i].some(x => atoms[x.j].el === 'C' && nb[x.j].some(m => m.o === 2 && atoms[m.j].el === 'O'))) return 2;
     return 3;
   };
-
-  /* 시작: 고리면 정육각형, 아니면 첫 탄소와 그 이웃 하나 */
-  const placed = [];
-  const put = (i, p) => { atoms[i].p = p; placed.push(i); };
-  if (mol.ring) {
-    mol.ring.forEach((i, k) => { const a = Math.PI / 2 - k * Math.PI / 3; put(i, [Math.cos(a) * 1.39, Math.sin(a) * 1.39, 0]); });
-  } else {
-    put(0, [0, 0, 0]);
-    const first = nb[0].find(n => atoms[n.j].el !== 'H') || nb[0][0];
-    if (first) put(first.j, [blen(atoms[0].el, atoms[first.j].el, first.o, first.arom), 0, 0]);
-  }
-  /* 2D 에서 X 와 Q 가 선 P–A 의 같은 쪽인가 (+1 같은 쪽, -1 반대, 0 모름) */
-  const side2d = (P, A, Q, X) => {
-    const pa = atoms[P], aa = atoms[A], qa = atoms[Q], xa = atoms[X];
-    if ([pa, aa, qa, xa].some(t => t.x2 == null)) return 0;
-    const cr = (o, t) => (aa.x2 - pa.x2) * (t.y2 - o.y2) - (aa.y2 - pa.y2) * (t.x2 - o.x2);
-    const s1 = cr(pa, qa), s2 = cr(pa, xa);
-    if (Math.abs(s1) < 1e-6 || Math.abs(s2) < 1e-6) return 0;
-    return Math.sign(s1) === Math.sign(s2) ? 1 : -1;
-  };
-
-  const queue = placed.slice();
-  const done = new Set();
-  while (queue.length) {
-    const A = queue.shift();
-    if (done.has(A)) continue;
-    done.add(A);
-    const todo = nb[A].filter(n => !atoms[n.j].p);
-    if (!todo.length) continue;
-    const placedN = nb[A].filter(n => atoms[n.j].p).map(n => n.j);
-    const pos = atoms[A].p;
-    const h = hyb(A);
-    let dirs = [];
-    if (mol.ring && mol.ring.includes(A)) {
-      /* 고리 원자의 치환기: 바깥쪽으로 */
-      dirs = [v.norm(pos)];
-    } else if (!placedN.length) {
-      dirs = [[1, 0, 0], [-0.33, 0.94, 0], [-0.33, -0.47, 0.82], [-0.33, -0.47, -0.82]];
-    } else {
-      const P = placedN[0];
-      const u = v.norm(v.sub(atoms[P].p, pos)); /* A → P */
-      const Qc = nb[P].map(n => n.j).filter(j => j !== A && atoms[j].p);
-      let w1;
-      if (placedN.length >= 2) {
-        const o = v.norm(v.sub(atoms[placedN[1]].p, pos));
-        const op = v.sub(o, v.mul(u, v.dot(o, u)));
-        w1 = v.len(op) > 1e-6 ? v.norm(op) : perp(u);
-      } else if (Qc.length) {
-        const q = v.sub(atoms[Qc[0]].p, atoms[P].p);
-        const qp = v.sub(q, v.mul(u, v.dot(q, u)));
-        w1 = v.len(qp) > 1e-6 ? v.mul(v.norm(qp), -1) : perp(u); /* Q 의 반대쪽 = anti */
-      } else w1 = Math.abs(u[2]) < 0.9 ? v.norm(v.cross(u, [0, 0, 1])) : perp(u);
-      const w2 = v.norm(v.cross(u, w1));
-      const ang = h === 1 ? 180 : h === 2 ? 120 : 109.47;
-      const th = ang * Math.PI / 180;
-      const need = nb[A].length - placedN.length;
-      let phis;
-      if (h === 1) phis = [0];
-      else if (h === 2) phis = placedN.length >= 2 ? [180] : [0, 180];
-      else phis = placedN.length >= 2 ? [120, 240].slice(0, need) : [0, 120, 240];
-      if (placedN.length >= 2 && h === 3) {
-        /* 이미 둘이 놓인 sp3: 남은 둘은 두 결합의 이등분선 반대쪽 위아래 */
-        const o = v.norm(v.sub(atoms[placedN[1]].p, pos));
-        const bis = v.norm(v.mul(v.add(u, o), -1));
-        const nrm = v.norm(v.cross(u, o));
-        dirs = [v.norm(v.add(v.mul(bis, Math.cos(0.955)), v.mul(nrm, Math.sin(0.955)))), v.norm(v.add(v.mul(bis, Math.cos(0.955)), v.mul(nrm, -Math.sin(0.955))))];
-      } else if (placedN.length >= 3) {
-        const s = placedN.reduce((acc, j) => v.add(acc, v.norm(v.sub(atoms[j].p, pos))), [0, 0, 0]);
-        dirs = [v.norm(v.mul(s, -1))];
-      } else {
-        dirs = phis.map(ph => {
-          const p = ph * Math.PI / 180;
-          return v.norm(v.add(v.mul(u, Math.cos(th)), v.mul(v.add(v.mul(w1, Math.cos(p)), v.mul(w2, Math.sin(p))), Math.sin(th))));
-        });
-      }
-      /* sp2 에서 두 자리 중 어느 쪽에 누구를: 2D 의 cis/trans 를 따른다 (phi 0 = Q 반대쪽, 180 = Q 쪽) */
-      if (h === 2 && dirs.length === 2 && Qc.length && placedN.length === 1) {
-        const Q = Qc[0];
-        const sorted = todo.slice().sort((m, n) => side2d(P, A, Q, m.j) - side2d(P, A, Q, n.j));
-        todo.splice(0, todo.length, ...sorted);
-      }
-    }
-    todo.forEach((n, k) => {
-      const d = dirs[k] || dirs[dirs.length - 1] || [1, 0, 0];
-      const L = blen(atoms[A].el, atoms[n.j].el, n.o, n.arom);
-      put(n.j, v.add(pos, v.mul(d, L)));
-      queue.push(n.j);
+  /* 처음 z: 고리 sp3 원자는 번갈아 위아래 (의자 모양의 씨앗), 나머지는 조금씩 흔든다 */
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
+  R.list.forEach(r => r.forEach((a, k) => { if (hyb(a) === 3) atoms[a].p[2] = (k % 2 ? 0.35 : -0.35); }));
+  mol.atoms.forEach((_, i) => { if (R.of[i] < 0) atoms[i].p[2] += rnd() * 0.5; });
+  /* 수소 처음 자리: 이웃 반대쪽 */
+  mol.atoms.forEach((a, i) => {
+    const hs = nbH[i]; if (!hs.length) return;
+    const c = atoms[i].p;
+    let dx = 0, dy = 0;
+    for (const { j } of nb[i]) if (atoms[j].el !== 'H') { dx += atoms[j].p[0] - c[0]; dy += atoms[j].p[1] - c[1]; }
+    const L = Math.hypot(dx, dy) || 1;
+    const bx = -dx / L, by = -dy / L;
+    hs.forEach((h, k) => {
+      const ang = (k - (hs.length - 1) / 2) * 1.1;
+      const zx = hs.length > 1 ? (k % 2 ? 0.8 : -0.8) : 0;
+      atoms[h].p = [c[0] + (bx * Math.cos(ang) - by * Math.sin(ang)) * 1.0, c[1] + (bx * Math.sin(ang) + by * Math.cos(ang)) * 1.0, c[2] + zx + rnd() * 0.2];
     });
-    for (const j of placedN) if (!done.has(j)) queue.push(j);
-  }
-  for (const a of atoms) if (!a.p) a.p = [Math.random(), Math.random(), Math.random()];
-  relax(atoms, bonds, nb);
-  const c = atoms.reduce((s, a) => v.add(s, a.p), [0, 0, 0]).map(x => x / atoms.length);
-  atoms.forEach(a => { a.p = v.sub(a.p, c); });
-  return { atoms, bonds };
-}
-
-/* 결합 · 1-3 거리는 처음 값을 지키고, 3결합 이상 떨어진 원자끼리 너무 가까우면 민다 */
-function relax(atoms, bonds, nb) {
-  const n = atoms.length;
+  });
+  /* 거리 제약 */
   const cons = [];
-  const dist = (i, j) => v.len(v.sub(atoms[i].p, atoms[j].p));
-  const near = atoms.map(() => new Set());
-  bonds.forEach(b => { cons.push([b.a, b.b, dist(b.a, b.b), 1]); near[b.a].add(b.b); near[b.b].add(b.a); });
-  for (let i = 0; i < n; i++) {
-    const ns = nb[i].map(x => x.j);
-    for (let p = 0; p < ns.length; p++) for (let q = p + 1; q < ns.length; q++) { cons.push([ns[p], ns[q], dist(ns[p], ns[q]), 0.6]); near[ns[p]].add(ns[q]); near[ns[q]].add(ns[p]); }
+  const d12 = new Map();
+  const key = (i, j) => i < j ? i * 100000 + j : j * 100000 + i;
+  bonds.forEach(b => { const L = blen(atoms[b.a].el, atoms[b.b].el, b.o, b.arom); cons.push([b.a, b.b, L, 1]); d12.set(key(b.a, b.b), L); });
+  const near = new Set(bonds.map(b => key(b.a, b.b)));
+  for (let c = 0; c < n; c++) {
+    const h = hyb(c); if (!h) continue;
+    const th = (h === 1 ? 180 : h === 2 ? 120 : 109.5) * RAD;
+    const ns = nb[c].map(x => x.j);
+    for (let p = 0; p < ns.length; p++) for (let q = p + 1; q < ns.length; q++) {
+      const a = d12.get(key(c, ns[p])), b = d12.get(key(c, ns[q]));
+      cons.push([ns[p], ns[q], Math.sqrt(a * a + b * b - 2 * a * b * Math.cos(th)), 0.6]);
+      near.add(key(ns[p], ns[q]));
+    }
   }
-  /* 이중결합 건너 1-4 (평면 · cis/trans 유지) */
-  bonds.filter(b => b.o === 2 || b.arom).forEach(b => {
-    for (const x of nb[b.a]) for (const y of nb[b.b]) if (x.j !== b.b && y.j !== b.a) cons.push([x.j, y.j, dist(x.j, y.j), 0.4]);
+  /* 이중결합 건너편: 2D 에서 같은 쪽이면 cis 거리, 반대쪽이면 trans 거리 */
+  const side2d = (a, b, x) => {
+    const A = mol.atoms[a], B = mol.atoms[b], X = atoms[x].heavy >= 0 ? mol.atoms[atoms[x].heavy] : null;
+    if (!X) return 0;
+    return Math.sign((B.x - A.x) * (X.y - A.y) - (B.y - A.y) * (X.x - A.x));
+  };
+  bonds.filter(b => (b.o === 2 || b.arom) && b.b < mol.atoms.length).forEach(b => {
+    const xs = nb[b.a].filter(x => x.j !== b.b).map(x => x.j), ys = nb[b.b].filter(x => x.j !== b.a).map(x => x.j);
+    if (!xs.length || !ys.length) return;
+    const L = d12.get(key(b.a, b.b));
+    /* 한쪽에 둘이면 서로 반대쪽: 수소는 무거운 원자의 반대편으로 */
+    const sideOf = (list, a, bb) => {
+      const s = list.map(x => side2d(a, bb, x));
+      if (list.length === 2) { if (!s[0] && s[1]) s[0] = -s[1]; if (!s[1] && s[0]) s[1] = -s[0]; if (!s[0] && !s[1]) { s[0] = 1; s[1] = -1; } }
+      else if (!s[0]) s[0] = 1;
+      return s;
+    };
+    const sx = sideOf(xs, b.a, b.b), sy = sideOf(ys, b.a, b.b);
+    xs.forEach((x, i) => ys.forEach((y, k) => {
+      const lx = d12.get(key(b.a, x)), ly = d12.get(key(b.b, y));
+      const px = [lx * Math.cos(120 * RAD), lx * Math.sin(120 * RAD) * sx[i]];
+      const py = [L + ly * Math.cos(60 * RAD), ly * Math.sin(60 * RAD) * sy[k]];
+      cons.push([x, y, Math.hypot(px[0] - py[0], px[1] - py[1]), 0.5]);
+      near.add(key(x, y));
+    }));
+  });
+  /* 벤젠: 마주 보는 원자 거리 */
+  R.list.forEach(r => {
+    if (r.length !== 6 || !bondsArom(mol, r)) return;
+    for (let k = 0; k < 3; k++) { cons.push([r[k], r[k + 3], 2.78, 0.5]); near.add(key(r[k], r[k + 3])); }
   });
   const P = atoms.map(a => a.p.slice());
-  for (let it = 0; it < 160; it++) {
+  const iters = n > 80 ? 220 : 320;
+  for (let it = 0; it < iters; it++) {
     for (const [i, j, d0, k] of cons) {
-      const d = v.sub(P[j], P[i]); const L = v.len(d) || 1e-6; const f = (L - d0) / L * 0.5 * k;
-      for (let t = 0; t < 3; t++) { P[i][t] += d[t] * f; P[j][t] -= d[t] * f; }
+      const dx = P[j][0] - P[i][0], dy = P[j][1] - P[i][1], dz = P[j][2] - P[i][2];
+      const L = Math.hypot(dx, dy, dz) || 1e-6, f = (L - d0) / L * 0.5 * k;
+      P[i][0] += dx * f; P[i][1] += dy * f; P[i][2] += dz * f; P[j][0] -= dx * f; P[j][1] -= dy * f; P[j][2] -= dz * f;
     }
-    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
-      if (near[i].has(j)) continue;
-      const min = atoms[i].el === 'H' || atoms[j].el === 'H' ? 2.2 : 2.9;
-      const d = v.sub(P[j], P[i]); const L = v.len(d);
-      if (L < min && L > 1e-6) { const f = (L - min) / L * 0.25; for (let t = 0; t < 3; t++) { P[i][t] += d[t] * f; P[j][t] -= d[t] * f; } }
+    if (it % 2 === 0) for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (near.has(key(i, j))) continue;
+      const hi = atoms[i].el === 'H', hj = atoms[j].el === 'H';
+      const min = hi && hj ? 1.9 : hi || hj ? 2.35 : 2.9;
+      const dx = P[j][0] - P[i][0], dy = P[j][1] - P[i][1], dz = P[j][2] - P[i][2];
+      const L = Math.hypot(dx, dy, dz);
+      if (L < min && L > 1e-6) { const f = (L - min) / L * 0.2; P[i][0] += dx * f; P[i][1] += dy * f; P[i][2] += dz * f; P[j][0] -= dx * f; P[j][1] -= dy * f; P[j][2] -= dz * f; }
     }
   }
-  atoms.forEach((a, i) => { a.p = P[i]; });
+  const c = P.reduce((s, p) => [s[0] + p[0], s[1] + p[1], s[2] + p[2]], [0, 0, 0]).map(x => x / n);
+  atoms.forEach((a, i) => { a.p = [P[i][0] - c[0], P[i][1] - c[1], P[i][2] - c[2]]; });
+  return { atoms, bonds };
 }
+function bondsArom(mol, r) { for (let k = 0; k < 6; k++) { const a = r[k], b = r[(k + 1) % 6]; const nb = mol.nb[a].find(x => x.j === b); if (!nb || !mol.bonds[nb.k].arom) return false; } return true; }

@@ -1,5 +1,6 @@
 /* 화면 곳곳에서 쓰는 작은 도구: 이름 토큰 → HTML, 분자 캐시, 저장소, 언어 */
-import { build, formula, key as molKey } from './chem/mol.js';
+import { parseSmiles, formula, toSmiles } from './chem/core.js';
+import { layout } from './chem/layout.js';
 import { nameMolecule } from './chem/name.js';
 import { commonName } from './chem/common.js';
 
@@ -29,18 +30,21 @@ export function namePair(res) {
   return { mainHTML: tokensHTML(main), sub, main: lang === 'ko' ? res.nameKo : res.nameEn };
 }
 
-/* 분자 + 이름 (같은 구조는 한 번만 계산) */
+/* 분자 + 이름. SMILES 로 부르면 한 번만 계산해 둔다 */
 const cache = new Map();
-export function molecule(scaf, subs) {
-  const k = molKey(scaf, subs);
-  if (!cache.has(k)) {
-    const mol = build(scaf, subs);
-    const res = nameMolecule(mol);
-    const f = formula(mol);
-    cache.set(k, { mol, res, f, common: commonName(res), key: k });
-    if (cache.size > 800) cache.delete(cache.keys().next().value);
+export function molecule(smi) {
+  if (!cache.has(smi)) {
+    const mol = parseSmiles(smi); layout(mol);
+    cache.set(smi, entry(mol, smi));
+    if (cache.size > 600) cache.delete(cache.keys().next().value);
   }
-  return cache.get(k);
+  return cache.get(smi);
+}
+/* 이미 좌표가 있는 분자 → 이름 · 분자식 (이름을 못 지으면 err) */
+export function entry(mol, key) {
+  let res = null, err = null;
+  try { res = nameMolecule(mol); } catch (e) { err = e.message || String(e); }
+  return { mol, res, err, f: formula(mol), common: res ? commonName(res) : null, key: key || toSmiles(mol) };
 }
 
 export function formulaHTML(f) { return f.parts.map(([el, n]) => el + (n > 1 ? `<sub>${n}</sub>` : '')).join(''); }
