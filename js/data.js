@@ -7,7 +7,7 @@ export const GROUP_INFO = [
     suffix: ['-oic acid', '-산', '에탄산 = ethanoic acid'], ring: ['-carboxylic acid', '고리에 붙으면: 벤젠 → benzoic acid'], prefix: ['carboxy-', '더 높은 순위가 없어 거의 쓰지 않음'],
     desc: '카보닐(C=O)과 하이드록시(–OH)가 한 탄소에 붙은 기. 물에서 H⁺ 를 내놓는 약산(pKa 약 4~5)이고, 두 분자가 수소 결합으로 짝을 지어 끓는점이 높습니다. 식초의 아세트산, 레몬의 시트르산, 근육의 젖산.',
     demo: 'OC(=O)c1ccccc1',
-    examples: ['CC(=O)O', 'CC(O)C(=O)O', 'OC(=O)/C=C\C(=O)O', 'OC(=O)c1ccccc1O']
+    examples: ['CC(=O)O', 'CC(O)C(=O)O', 'OC(=O)/C=C\\C(=O)O', 'OC(=O)c1ccccc1O']
   },
   {
     id: 'ester', gid: 'COOCH3', en: 'ESTER', ko: '에스터', fg: '–COO–R', rank: 2,
@@ -98,8 +98,8 @@ export const GROUP_INFO = [
 /* 첫 화면 슬라이드 */
 export const SLIDES = [
   { route: 'build', n: '01', en: 'BUILD', ko: '분자 조립', mol: 'C=CCO',
-    desc: '뼈대나 유명한 분자에서 시작해 원자를 눌러 작용기 · 탄소 · 고리를 이어 붙이세요. 큰 분자도 됩니다. 붙일 때마다 이름이 어떻게 바뀌는지 — 주사슬 · 번호 · 접두사까지 한 단계씩 풀어 드립니다.' },
-  { route: 'react', n: '02', en: 'REACTIONS', ko: '반응 예측', mol: 'CCC(C)Br',
+    desc: '뼈대나 유명한 분자에서 시작해 원자를 눌러 작용기 · 탄소 · 고리를 이어 붙이세요. 큰 분자도 됩니다. 붙일 때마다 이름이 어떻게 바뀌는지 — 주사슬 · 번호 · 접두사, 입체중심의 R/S 까지 한 단계씩 풀어 드립니다.' },
+  { route: 'react', n: '02', en: 'REACTIONS', ko: '반응 예측', mol: 'C[C@@H](Br)CC',
     desc: '기질과 시약을 고르면 주생성물 · 부생성물을 예측합니다. SN1 · SN2 · E1 · E2, 마르코브니코프, 방향 지시, 라디칼 선택성, 그리고 교과서 이후에 새로 알려진 것까지.' },
   { route: 'groups', n: '03', en: 'FUNCTIONAL GROUPS', ko: '작용기 도감', mol: 'OC(=O)c1ccccc1O',
     desc: '분자의 성질을 정하는 원자 묶음 열두 가지. 이름 끝을 차지하는 우선순위대로 정리하고, 같은 작용기를 여러 뼈대에 붙였을 때의 이름을 한눈에 비교합니다.' },

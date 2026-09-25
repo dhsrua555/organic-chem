@@ -46,9 +46,10 @@ function sortKids(mol, list, depth) {
   return withSig.map(x => x.k);
 }
 
-/* a, b: 같은 중심에서 뻗은 두 가지의 첫 원자 노드. 양수면 a 가 높다 */
-export function compareBranch(mol, a, b) {
-  if (a.z !== b.z) return a.z - b.z;
+/* a, b: 같은 중심에서 뻗은 두 가지의 첫 원자 노드. 양수면 a 가 높다.
+   why 객체를 주면 처음 갈린 곳을 적어 준다: { depth(1 = 붙은 원자, 2 = 그다음 원자들 …), za, zb(원자번호 묶음) } */
+export function compareBranch(mol, a, b, why) {
+  if (a.z !== b.z) { if (why) Object.assign(why, { depth: 1, za: [a.z], zb: [b.z] }); return a.z - b.z; }
   let fa = [a], fb = [b];
   for (let d = 0; d < 12; d++) {
     const ca = fa.map(n => sortKids(mol, kids(mol, n), 5));
@@ -57,13 +58,17 @@ export function compareBranch(mol, a, b) {
     for (let i = 0; i < len; i++) {
       const za = (ca[i] || []).map(x => x.z), zb = (cb[i] || []).map(x => x.z);
       const m = Math.max(za.length, zb.length, 3);
-      for (let k = 0; k < m; k++) { const x = za[k] ?? 0, y = zb[k] ?? 0; if (x !== y) return x - y; }
+      for (let k = 0; k < m; k++) {
+        const x = za[k] ?? 0, y = zb[k] ?? 0;
+        if (x !== y) { if (why) Object.assign(why, { depth: d + 2, za: pad3(za), zb: pad3(zb) }); return x - y; }
+      }
     }
     fa = ca.flat(); fb = cb.flat();
     if (!fa.length && !fb.length) return 0;
   }
   return 0;
 }
+const pad3 = z => z.length >= 3 ? z : z.concat(Array(3 - z.length).fill(0));
 
 /* 중심 원자 c 에서 뻗은 치환기 노드 목록 (이웃 + 수소) */
 export function branchesOf(mol, c) {
@@ -73,6 +78,14 @@ export function branchesOf(mol, c) {
   return out;
 }
 
+/* 중심 c 의 치환기 넷을 CIP 순위대로 (높은 것 먼저). 같은 것이 있으면 null */
+export function rankBranches(mol, c) {
+  const br = branchesOf(mol, c);
+  if (br.length !== 4) return null;
+  const sorted = br.slice().sort((p, q) => compareBranch(mol, q, p));
+  for (let k = 0; k < 3; k++) if (compareBranch(mol, sorted[k], sorted[k + 1]) === 0) return null;
+  return sorted;
+}
 /* 입체중심: sp3 탄소, 치환기 넷이 모두 다름 */
 export function stereocenters(mol) {
   const out = [];
@@ -102,6 +115,16 @@ export function doubleBondStereo(mol) {
   return out;
 }
 
+/* 구조만 보고 E/Z 가 있을 수 있는 C=C 인가 (양쪽 끝의 두 치환기가 서로 다름). 좌표는 보지 않는다 */
+export function stereogenicDB(mol, a, b) {
+  for (const [c, d] of [[a, b], [b, a]]) {
+    const subs = mol.nb[c].filter(n => n.j !== d).map(n => ({ atom: n.j, from: c, z: Z(mol.atoms[n.j].el), dup: false, path: [c] }));
+    const h = mol.atoms[c].h;
+    if (subs.length + h !== 2 || h === 2) return false;
+    if (subs.length === 2 && compareBranch(mol, subs[0], subs[1]) === 0) return false;
+  }
+  return !inSmallRing(mol, a, b);
+}
 /* 8원자 이하 고리 안의 이중결합은 cis 로만 존재하므로 E/Z 를 붙이지 않는다 */
 function inSmallRing(mol, a, b) {
   const seen = new Set([a]); let frontier = [[a, 0]];

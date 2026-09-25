@@ -4,7 +4,8 @@
    케톤 · 알코올(페놀) · 아민 · 에터 · 할로젠 · 나이트로. 고리가 원자를 나눠 갖는(축합) 분자는 다루지 않는다.
    결과: 영어 · 한글 토큰(역할별 색칠), 모체 · 번호 · 접두사 정보, 풀이에 쓰는 근거. */
 import { rings as ringsOf, isBenzene, bondBetween, HALOGENS } from './core.js';
-import { doubleBondStereo, stereocenters } from './cip.js';
+import { doubleBondStereo, stereogenicDB } from './cip.js';
+import { stereoInfo, mirror } from './stereo.js';
 
 export const PRI = { acid: 1, ester: 2, acylhalide: 3, amide: 4, nitrile: 5, aldehyde: 6, ketone: 7, alcohol: 8, amine: 9 };
 export const CLASS = {
@@ -57,6 +58,25 @@ function locSort(a, b) {
   return a - b;
 }
 const numLocs = list => list.filter(l => typeof l === 'number');
+/* 입체 표시 [[번호, E|Z|R|S]] → "E" 또는 "2E,4R". 범위 안에 입체 단위(이중결합 · 입체중심)가 둘 이상이면 하나여도 번호를 붙인다 */
+function fmtDescs(list, units) {
+  if (!list.length) return null;
+  const L = list.slice().sort((x, y) => x[0] - y[0]);
+  return L.length === 1 && units <= 1 ? L[0][1] : L.map(([l, d]) => fmtLoc(l) + d).join(',');
+}
+/* pos 범위에 걸친 입체 단위 수: 끝이 CH₂ 가 아닌 C=C (작은 고리 안 제외) + 입체중심 */
+function stereoUnits(C, pos, skip = -1) {
+  let n = 0;
+  for (const b of C.mol.bonds) {
+    if (b.o !== 2 || b.arom || b.a === skip || b.b === skip) continue;
+    if (!pos.has(b.a) && !pos.has(b.b)) continue;
+    const A = C.mol.atoms[b.a], B = C.mol.atoms[b.b];
+    if (A.el !== 'C' || B.el !== 'C' || !stereogenicDB(C.mol, b.a, b.b)) continue;
+    n++;
+  }
+  for (const c of C.centers || []) if (pos.has(c)) n++;
+  return n;
+}
 
 /* ── 분석 ───────────────────────────────────────── */
 export function analyze(mol) {
@@ -294,7 +314,8 @@ function acylName(C, c, from) {
     const rs = ringSubCore(C, r, c);
     if (type === 'benzene') return rs.pre ? { en: rs.pre + 'benzoyl', ko: rs.preKo + '벤조일', key: letters(rs.pre + 'benzoyl'), compound: true } : simple('benzoyl', '벤조일');
     const word = ringWordFor(C, ri, rs, true);
-    return { en: word.en + 'carbonyl', ko: word.ko + '카보닐', key: letters(word.en + 'carbonyl'), compound: true };
+    const st = rs.stereo ? `(${rs.stereo})-` : '';
+    return { en: st + word.en + 'carbonyl', ko: st + word.ko + '카보닐', key: letters(word.en + 'carbonyl'), compound: true };
   }
   /* 사슬 아실: c 가 1번 */
   const ch = substituentChain(C, c, from, true, c);
@@ -367,8 +388,8 @@ function substituentChain(C, r, from, acylMode, acylRoot) {
     if (ia && ib) st.push([Math.min(best.pos.get(d.a), best.pos.get(d.b)), d.desc]);
     else if ((ia || ib) && d.a !== from && d.b !== from) st.push([best.pos.get(ia ? d.a : d.b), d.desc]);
   }
-  st.sort((x, y) => x[0] - y[0]);
-  best.stereo = st.length === 1 ? st[0][1] : st.length > 1 ? st.map(([l, d]) => l + d).join(',') : null;
+  if (C.rs) for (const [c, d] of C.rs) if (best.pos.has(c)) st.push([best.pos.get(c), d]);
+  best.stereo = fmtDescs(st, stereoUnits(C, best.pos, from));
   return best;
 }
 function cmpSubLite(a, b) {
@@ -392,8 +413,9 @@ function ringSub(C, r, from, bo) {
     if (!rs.enes.length) { en = 'cyclo' + STEM[m] + yl; ko = '사이클로' + KO_YL[m] + (bo === 2 ? '리덴' : ''); base = en; baseKo = ko; }
     else { const toks = parentWord(m, rs.enes, [], { en: yl, ko: ylKo, vowel: true, locs: [1] }, { ring: true }); en = toks.map(t => t.en).join(''); ko = toks.map(t => t.ko).join(''); }
   }
-  if (!rs.pre) return { en, ko, key: letters(en), compound: /\d/.test(en), base, baseKo };
-  return { en: rs.pre + en, ko: rs.preKo + ko, key: letters(rs.pre + en), compound: true, base, baseKo };
+  const st = rs.stereo ? `(${rs.stereo})-` : '';
+  if (!rs.pre) return { en: st + en, ko: st + ko, key: letters(en), compound: /\d/.test(en) || !!st, base, baseKo };
+  return { en: st + rs.pre + en, ko: st + rs.preKo + ko, key: letters(rs.pre + en), compound: true, base, baseKo };
 }
 /* 고리 치환기 번호: 붙는 원자 = 1 (옥시레인은 O = 1) */
 function ringSubCore(C, r, from) {
@@ -412,7 +434,12 @@ function ringSubCore(C, r, from) {
     if (cmp < 0) best = cand;
   }
   const g = best.pre.length ? groupPrefixes(best.pre, false) : null;
-  return { ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre };
+  const st = [];
+  /* 고리 원자에서 바깥으로 난 이중결합(…일리덴)의 E/Z, 고리 원자의 R/S */
+  for (const d of C.db) { const ia = best.pos.has(d.a), ib = best.pos.has(d.b); if (ia !== ib && d.a !== from && d.b !== from) st.push([best.pos.get(ia ? d.a : d.b), d.desc]); }
+  if (C.rs) for (const [c, d] of C.rs) if (best.pos.has(c)) st.push([best.pos.get(c), d]);
+  const stereo = fmtDescs(st, stereoUnits(C, best.pos, from));
+  return { ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre, stereo };
 }
 function ringWordFor(C, ri, rs, carbo) {
   const type = C.types[ri], m = rs.ring.length;
@@ -662,7 +689,17 @@ function evaluate(C, cand, pos) {
   nList.sort((p, q) => p[1] - q[1]).forEach(([n], i) => tags.set(n, 'N' + '′'.repeat(i)));
   const rec = { alkyls: [], halides: [], nTag: n => tags.get(n) || 'N' };
   const pre = prefixesOn(C, cand.atoms, pos, { P: C.P, suffix: cand.suffix, carbo: cand.carbo, rec });
-  return { cand, pos, pLocs, enes, ynes, mult: [...enes, ...ynes].sort((a, b) => a - b), pre, rec };
+  const descs = parentStereo(C, pos);
+  const zL = descs.filter(x => x.d === 'Z').map(x => x.l), rL = descs.filter(x => x.d === 'R').map(x => x.l);
+  return { cand, pos, pLocs, enes, ynes, mult: [...enes, ...ynes].sort((a, b) => a - b), pre, rec, descs, zL, rL };
+}
+/* 모체에 붙는 입체 표시: 모체 안 · 모체에서 뻗은 이중결합의 E/Z, 모체 원자의 R/S. [{ l(번호), d }] 번호 순 */
+function parentStereo(C, pos) {
+  const inParent = C.db.filter(d => pos.has(d.a) && pos.has(d.b) && !(C.R.of[d.a] >= 0 && C.R.of[d.a] === C.R.of[d.b]));
+  const exo = C.db.filter(d => (pos.has(d.a) !== pos.has(d.b)));
+  const descs = inParent.map(d => ({ l: Math.min(pos.get(d.a), pos.get(d.b)), d: d.desc })).concat(exo.map(d => ({ l: pos.get(pos.has(d.a) ? d.a : d.b), d: d.desc })));
+  if (C.rs) for (const [c, d] of C.rs) if (pos.has(c)) descs.push({ l: pos.get(c), d });
+  return descs.sort((x, y) => x.l - y.l || (x.d < y.d ? -1 : 1));
 }
 
 /* 후보 비교: 음수면 a 가 낫다. 처음 갈린 기준 이름도 돌려준다 */
@@ -686,7 +723,9 @@ function cmpEval(a, b) {
   const order = [
     ['pLoc', x => x.pLocs, true], ['multLoc', x => x.mult, true], ['dblLoc', x => x.enes, true],
     ['nPre', x => -x.pre.length, false], ['preLoc', x => sortedLocs(x.pre), true], ['alpha', x => alphaLocs(x.pre), true],
-    ['esterAlpha', x => x.rec.alkyls.slice().sort((p, q) => p.key < q.key ? -1 : p.key > q.key ? 1 : p.loc - q.loc).map(a => a.loc), true]
+    ['esterAlpha', x => x.rec.alkyls.slice().sort((p, q) => p.key < q.key ? -1 : p.key > q.key ? 1 : p.loc - q.loc).map(a => a.loc), true],
+    /* 그래도 같으면: Z 에, 그다음 R 에 작은 번호 (IUPAC 2013 P-31.1.4.3.4) */
+    ['stereoZ', x => x.zL, true], ['stereoR', x => x.rL, true]
   ];
   for (const [k, f, list] of order) { const d = list ? cmpList(f(a), f(b)) : f(a) - f(b); if (d) return [d, k]; }
   return [0, null];
@@ -730,6 +769,8 @@ export function nameMolecule(mol, opts = {}) {
   if (mol.atoms.some(a => a.q && !(a.el === 'N' && a.q === 1) && !(a.el === 'O' && a.q === -1))) throw new NameError('이온은 이름을 짓지 않습니다');
   const C = { mol, info, R, types: ringTypes(mol, R), memo: new Map(), rule };
   C.db = doubleBondStereo(mol);
+  const SI = stereoInfo(mol);
+  C.rs = SI.rs; C.centers = SI.centers;
   C.present = classesPresent(C);
   C.P = topClass(C.present);
   C.S = new Set();
@@ -775,8 +816,20 @@ export function nameMolecule(mol, opts = {}) {
 
   const res = assemble(C, best);
   Object.assign(res, { why: { chain: chainWhy, num: numWhy }, present: C.present, info, rule, db: C.db });
-  res.centers = stereocenters(mol);
+  res.centers = SI.centers;
+  res.rs = SI.rs; res.undef = SI.undef;
   res.principalAtoms = principalAtoms(C, best);
+  /* 이름에 들어가지 못한 R/S (곁가지의 곁가지 등) */
+  const cited = (res.nameEn.match(/(?:^|[(,])\d*′*[RS](?=[,)])/g) || []).length;
+  res.rsMissing = Math.max(0, SI.rs.size - cited);
+  /* 거울상의 이름 (같으면 메소) */
+  if (!opts.noCompare && SI.rs.size) {
+    try {
+      const mi = nameMolecule(mirror(mol), { noCompare: true, noNotes: true, rule });
+      res.mirror = { en: mi.nameEn, ko: mi.nameKo };
+      res.meso = mi.nameEn === res.nameEn;
+    } catch { /* 생략 */ }
+  }
   if (!opts.noCompare) {
     try {
       const alt = nameMolecule(mol, { rule: 'textbook', noCompare: true, noNotes: true });
@@ -856,13 +909,8 @@ function assemble(C, e) {
   if (P === 'ester') alkyl = esterAlkyls(rec.alkyls);
   if (P === 'acylhalide' && !tail && suf && !suf.en.includes(' ')) tail = HALIDE_WORD[halide];
   /* 입체 표시 */
-  const inParent = C.db.filter(d => pos.has(d.a) && pos.has(d.b) && !(C.R.of[d.a] >= 0 && C.R.of[d.a] === C.R.of[d.b]));
-  const exo = C.db.filter(d => (pos.has(d.a) !== pos.has(d.b)));
-  let stereo = null;
-  const descs = inParent.map(d => ({ l: Math.min(pos.get(d.a), pos.get(d.b)), d: d.desc })).concat(exo.map(d => ({ l: pos.get(pos.has(d.a) ? d.a : d.b), d: d.desc })));
-  descs.sort((x, y) => x.l - y.l);
-  if (descs.length === 1) stereo = descs[0].d;
-  else if (descs.length > 1) stereo = descs.map(x => fmtLoc(x.l) + x.d).join(',');
+  const descs = e.descs || parentStereo(C, pos);
+  const stereo = fmtDescs(descs.map(x => [x.l, x.d]), stereoUnits(C, pos));
   const ste = stereo ? [T(`(${stereo})`, `(${stereo})`, 'ste'), T('-', '-', 'pun')] : [];
   const core = ste.concat(toks);
   let en = core.map(t => ({ s: t.en, r: t.r })), ko = core.map(t => ({ s: t.ko, r: t.r }));
@@ -934,8 +982,9 @@ function notesFor(mol, info, res) {
     else if (f.OH.length && f.OR.length && f.kind !== 'ester') notes.push({ type: 'hemiacetal', atom: i });
   });
   void R;
-  if (res.centers.length) notes.push({ type: 'chiral', atoms: res.centers });
-  if (res.stereo) notes.push({ type: 'ez', desc: res.stereo });
+  if (res.centers.length) notes.push({ type: 'chiral', atoms: res.centers, rs: res.rs, undef: res.undef, meso: res.meso, mirror: res.mirror, missing: res.rsMissing });
+  const ezOnly = (res.stereo || '').split(',').filter(x => /[EZ]$/.test(x));
+  if (ezOnly.length) notes.push({ type: 'ez', desc: ezOnly.length === 1 && !res.stereo.includes(',') ? ezOnly[0] : ezOnly.join(',') });
   if (res.alt1993) notes.push({ type: 'rule1993', en: res.alt1993.en, ko: res.alt1993.ko });
   return notes;
 }

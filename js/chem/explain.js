@@ -101,12 +101,16 @@ function prefixText(res) {
 }
 function stereoText(res) {
   const out = [];
-  if (res.stereo) {
-    const multi = res.stereo.includes(',');
-    out.push(multi ? `이중결합마다 E/Z 를 번호와 함께 적습니다 (${b(res.stereo)}). 양 끝에서 CIP 우선순위가 높은 치환기끼리 같은 쪽이면 Z, 반대쪽이면 E.`
-      : `이중결합 양 끝에서 CIP 우선순위(원자번호)가 높은 치환기끼리 ${res.stereo === 'Z' ? '같은 쪽 → ' + b('Z') + ' (zusammen)' : '반대쪽 → ' + b('E') + ' (entgegen)'}입니다.`);
+  const ez = (res.stereo || '').split(',').filter(x => /[EZ]$/.test(x));
+  const rs = (res.stereo || '').split(',').filter(x => /[RS]$/.test(x));
+  if (ez.length) {
+    out.push(ez.length > 1 || rs.length ? `이중결합마다 E/Z 를 번호와 함께 적습니다 (${b(ez.join(','))}). 양 끝에서 CIP 우선순위가 높은 치환기끼리 같은 쪽이면 Z, 반대쪽이면 E.`
+      : `이중결합 양 끝에서 CIP 우선순위(원자번호)가 높은 치환기끼리 ${ez[0].endsWith('Z') ? '같은 쪽 → ' + b('Z') + ' (zusammen)' : '반대쪽 → ' + b('E') + ' (entgegen)'}입니다.`);
   }
-  if (res.centers.length) out.push(`치환기 넷이 모두 다른 탄소(입체중심, 그림의 *)가 ${res.centers.length}개 있어 거울상 이성질체(R/S)가 존재합니다. 여기서는 R/S 를 정하지 않은 이름입니다.`);
+  if (rs.length) out.push(`치환기 넷이 모두 다른 탄소(입체중심)마다 CIP 순위 ①~④ 를 매기고, 가장 낮은 ④ 를 뒤로 보냈을 때 ① → ② → ③ 이 시계 방향이면 ${b('R')}, 반대면 ${b('S')} (${b(rs.join(','))}). E/Z · R/S 는 번호 순서대로 한 괄호에 모아 이름 맨 앞에 씁니다.`);
+  const undef = res.undef ? res.undef.length : 0;
+  if (undef) out.push(`입체중심 ${undef}개(그림의 *)는 배열이 정해지지 않아 R/S 없이 적었습니다.`);
+  if (res.meso) out.push(`입체중심이 있어도 분자 안에 거울면이 있으면 거울상과 같은 분자 — ${b('메소')} 화합물입니다.`);
   return out.join(' ');
 }
 
@@ -165,7 +169,17 @@ export function diff(prevMol, prev, mol, cur) {
     const pe = prev.enes.concat(prev.ynes).join(','), ce = cur.enes.concat(cur.ynes).join(',');
     if (pe && ce && pe !== ce) out.push(`그래서 다중결합 위치 번호도 ${pe}에서 ${b(ce)}${jo(ce, '로')} 바뀝니다.`);
   }
-  if (!prev.stereo && cur.stereo) out.push(`이중결합 양쪽 치환기가 달라져 ${b('(' + cur.stereo + ')')} 표시가 붙습니다.`);
+  /* 입체: 새로 생긴 입체중심 · 뒤집힌 배열 · 새 E/Z */
+  const ezOf = r => (r.stereo || '').split(',').filter(x => /[EZ]$/.test(x)).join(',');
+  if (!ezOf(prev) && ezOf(cur)) out.push(`이중결합 양쪽 치환기가 달라져 ${b('(' + ezOf(cur) + ')')} 표시가 붙습니다.`);
+  const pc = new Set(prev.centers || []), newC = (cur.centers || []).filter(c => !pc.has(c));
+  if (newC.length && cur.rs) out.push(`치환기 넷이 모두 다른 탄소가 새로 생겨 입체중심이 되었습니다 → ${newC.map(c => (cur.locLabel && cur.locLabel.get(c) ? 'C' + cur.locLabel.get(c) : '원자 ' + (c + 1)) + ' ' + b(cur.rs.get(c) || '*')).join(', ')}. 붙인 조각을 쐐기(앞)로 그렸고, R/S 도구로 뒤집을 수 있습니다.`);
+  if (prev.rs && cur.rs) {
+    const flippedC = [...cur.rs].filter(([c, d]) => prev.rs.has(c) && prev.rs.get(c) !== d && prevMol.atoms[c] && mol.atoms[c] && prevMol.atoms[c].chi && mol.atoms[c].chi && prevMol.atoms[c].chi.s !== mol.atoms[c].chi.s);
+    if (flippedC.length) out.push(`입체중심의 배열을 거울상으로 뒤집었습니다: ${flippedC.map(([c, d]) => `${b(prev.rs.get(c) + ' → ' + d)}`).join(', ')}.`);
+    const keptButRenamed = [...cur.rs].filter(([c, d]) => prev.rs.has(c) && prev.rs.get(c) !== d && prevMol.atoms[c] && mol.atoms[c] && prevMol.atoms[c].chi && mol.atoms[c].chi && prevMol.atoms[c].chi.s === mol.atoms[c].chi.s && prevMol.atoms[c].chi.n.join() === mol.atoms[c].chi.n.join());
+    if (keptButRenamed.length) out.push(`공간 배치는 그대로인데 ${keptButRenamed.map(([c, d]) => b(prev.rs.get(c) + ' → ' + d)).join(', ')} — 치환기의 CIP 순위가 바뀌었기 때문입니다 (R/S 는 모양이 아니라 순위로 정해지는 이름).`);
+  }
   const pp = new Set(prev.prefixes.map(p => p.en)), cp = new Set(cur.prefixes.map(p => p.en));
   const added = [...cp].filter(x => !pp.has(x)), removed = [...pp].filter(x => !cp.has(x));
   if (added.length) out.push(`새 접두사: ${added.map(code).join(', ')}.`);
@@ -193,8 +207,13 @@ export function noteText(n) {
     case 'halohydrin': return { tone: 'warn', t: `${b('같은 탄소에 OH 와 할로젠')}: HX 가 빠져 카보닐(C=O)이 되기 쉬운 불안정한 구조입니다.` };
     case 'hemiaminal': return { tone: 'warn', t: `${b('같은 탄소에 OH 와 NH₂')}: 물이 빠져 이민이 되기 쉬운 불안정한 구조입니다.` };
     case 'hemiacetal': return { tone: 'warn', t: `${b('헤미아세탈')}: 같은 탄소의 OH 와 OR 은 쉽게 풀려 알데하이드 · 케톤과 알코올로 돌아갑니다.` };
-    case 'chiral': return { tone: 'info', t: `${b('입체중심 ' + n.atoms.length + '개')}: 치환기 넷이 모두 다른 탄소(그림의 *)가 있어 거울상 이성질체 두 가지(R/S)가 있습니다.` };
-    case 'ez': return { tone: 'info', t: `${b('기하 이성질')}: 이중결합은 돌 수 없어 치환기 배치가 고정됩니다. 지금 모양은 ${b(n.desc)}입니다. 도구의 ‘E/Z 뒤집기’로 이중결합을 누르면 반대 이성질체가 됩니다.` };
+    case 'chiral': {
+      const def = n.rs ? n.rs.size : 0;
+      if (n.meso) return { tone: 'info', t: `${b('메소 화합물')}: 입체중심이 ${def}개 있지만 분자 안의 거울면 때문에 거울상과 겹칩니다 (광학 비활성).` };
+      if (def) return { tone: 'info', t: `${b('입체중심 ' + n.atoms.length + '개')}: 그림의 R · S 가 각 탄소의 배열입니다. 쐐기(▲)는 앞으로 나온 결합, 빗금 쐐기는 뒤로 들어간 결합. 도구의 ‘R/S’로 입체중심을 누르면 배열이 뒤집힙니다.${n.mirror ? ` 거울상은 ${code(n.mirror.en)}.` : ''}` };
+      return { tone: 'info', t: `${b('입체중심 ' + n.atoms.length + '개')}: 치환기 넷이 모두 다른 탄소(그림의 *)가 있어 거울상 이성질체 두 가지(R/S)가 있습니다. 배열이 정해지지 않은 구조입니다.` };
+    }
+    case 'ez': return { tone: 'info', t: `${b('기하 이성질')}: 이중결합은 돌 수 없어 치환기 배치가 고정됩니다. 지금 모양은 ${b(n.desc)}입니다. 도구의 ‘E/Z’로 이중결합을 누르면 반대 이성질체가 됩니다.` };
     case 'rule1993': return { tone: 'info', t: `${b('규칙 차이')}: 2013 권고 이전(대부분의 교과서) 규칙으로는 ${code(n.en)}(${n.ko})${jo(n.ko, '로')} 부릅니다.` };
     default: return null;
   }

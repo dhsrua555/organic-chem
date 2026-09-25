@@ -1,5 +1,8 @@
 /* 분자 그래프의 바탕: 원자 · 결합 · 암시적 수소, SMILES 읽기, 고리 찾기, 분자식, MOL 파일.
-   원자: { el, h(암시적 수소 수), q(전하), x, y }  결합: { a, b, o(1·2·3), arom } */
+   원자: { el, h(암시적 수소 수), q(전하), x, y, chi? }  결합: { a, b, o(1·2·3), arom }
+   chi(입체중심의 배열): { n: [이웃 넷 (원자 번호, 암시적 H 는 -1)], s: ±1 }
+     s = 네 이웃 위치 p0..p3 로 만든 부피 det[p1−p0, p2−p0, p3−p0] 의 부호.
+     SMILES 의 @ 는 s = −1, @@ 는 s = +1 (이웃 순서 = SMILES 에 적힌 순서) */
 
 export const ELEMENTS = {
   H: { z: 1, m: 1.008, v: 1 }, C: { z: 6, m: 12.011, v: 4 }, N: { z: 7, m: 14.007, v: 3 }, O: { z: 8, m: 15.999, v: 2 },
@@ -58,12 +61,53 @@ export function setOrder(mol, k, o) {
   for (const n of mol.nb[b.a]) if (n.k === k) n.o = o;
   for (const n of mol.nb[b.b]) if (n.k === k) n.o = o;
 }
+/* ── 입체중심 배열 (chi) ─────────────────────── */
+/* 네 점의 방향: det[p1−p0, p2−p0, p3−p0] 의 부호 (+1 / −1, 납작하면 0) */
+export function orient4(p0, p1, p2, p3) {
+  const a = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], b = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]], c = [p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]];
+  const d = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+  return Math.abs(d) < 1e-9 ? 0 : Math.sign(d);
+}
+/* 순열의 홀짝: 같은 원소 넷을 다른 순서로 적었을 때 +1(짝) / −1(홀) */
+export function permParity(from, to) {
+  const idx = to.map(x => from.indexOf(x));
+  if (idx.some(i => i < 0) || new Set(idx).size !== idx.length) return 0;
+  let p = 1;
+  const v = idx.slice();
+  for (let i = 0; i < v.length; i++) while (v[i] !== i) { const j = v[i]; [v[i], v[j]] = [v[j], v[i]]; p = -p; }
+  return p;
+}
+/* chi 가 지금 연결과 맞는가: sp³ (단일결합만), 이웃 넷 = chi.n 과 같은 집합, H 는 많아야 하나 */
+export function chiralOK(mol, i) {
+  const a = mol.atoms[i];
+  if (!a || !a.chi) return false;
+  const n = a.chi.n;
+  if (n.length !== 4 || a.h > 1 || mol.nb[i].length + a.h !== 4) return false;
+  if (mol.nb[i].some(x => x.o !== 1 || (mol.bonds[x.k] && mol.bonds[x.k].arom))) return false;
+  if (n.filter(j => j < 0).length !== a.h) return false;
+  const heavy = n.filter(j => j >= 0);
+  return heavy.length === mol.nb[i].length && new Set(heavy).size === heavy.length && mol.nb[i].every(x => heavy.includes(x.j));
+}
+/* 같은 배열을 이웃 순서 to 로 적을 때의 부호 */
+export function chiSignFor(chi, to) { const p = permParity(chi.n, to); return p ? chi.s * p : 0; }
+/* 원자 번호가 바뀔 때 chi 를 옮긴다 (없어진 이웃은 H 로 바뀌었다고 본다) */
+function remapChi(a, map) {
+  if (!a.chi) return a;
+  return { ...a, chi: { n: a.chi.n.map(j => j < 0 ? -1 : map.has(j) ? map.get(j) : -1), s: a.chi.s } };
+}
+/* 맞지 않게 된 chi 는 지운다 (결합이 바뀌었거나 이웃이 둘 이상 바뀜) */
+export function cleanChi(mol) {
+  mol.atoms.forEach((a, i) => { if (a.chi && !chiralOK(mol, i)) delete a.chi; });
+  return mol;
+}
+
 /* 원자 여럿을 지우고 번호를 다시 매긴다. 반환: 옛 번호 → 새 번호 */
 export function removeAtoms(mol, dead) {
   const kill = new Set(dead);
   const map = new Map();
   const atoms = [];
   mol.atoms.forEach((a, i) => { if (!kill.has(i)) { map.set(i, atoms.length); atoms.push(a); } });
+  atoms.forEach((a, k) => { atoms[k] = remapChi(a, map); });
   const bonds = [];
   for (const b of mol.bonds) {
     if (kill.has(b.a) || kill.has(b.b)) continue;
@@ -85,7 +129,7 @@ export function components(mol) {
 }
 export function subMol(mol, atomList) {
   const map = new Map(atomList.map((a, i) => [a, i]));
-  const atoms = atomList.map(i => ({ ...mol.atoms[i] }));
+  const atoms = atomList.map(i => remapChi({ ...mol.atoms[i] }, map));
   const bonds = mol.bonds.filter(b => map.has(b.a) && map.has(b.b)).map(b => ({ ...b, a: map.get(b.a), b: map.get(b.b) }));
   return makeMol(atoms, bonds);
 }
@@ -149,17 +193,23 @@ export function perceiveAromatic(mol) {
 export function parseSmiles(s) {
   const atoms = [], bonds = [], aromAtom = [];
   const dir = []; /* 결합 k 의 방향 문자와 쓴 순서 (from, to) */
+  const order = []; /* 원자마다 SMILES 에 적힌 이웃 순서 (@ · @@ 해석용). 'H' = 괄호 안 H, {ring} = 아직 안 닫힌 고리 */
+  const chiral = []; /* [원자, '@' | '@@'] */
   let prev = -1, pend = null, pendDir = null;
   const stack = [], ringOpen = {};
   let i = 0;
-  const addA = (el, arom, q = 0, hx = null) => {
+  const addA = (el, arom, q = 0, hx = null, chi = '') => {
     atoms.push({ el, h: 0, q, x: 0, y: 0, _hx: hx });
     aromAtom.push(arom);
     const idx = atoms.length - 1;
+    order.push(prev >= 0 ? [prev] : []);
+    if (hx) order[idx].push('H');
+    if (chi) chiral.push([idx, chi]);
     if (prev >= 0) {
       const o = pend || (arom && aromAtom[prev] ? 1.5 : 1);
       bonds.push({ a: prev, b: idx, o });
       dir.push(pendDir ? { c: pendDir, from: prev, to: idx } : null);
+      order[prev].push(idx);
     }
     pend = null; pendDir = null; prev = idx;
   };
@@ -182,8 +232,10 @@ export function parseSmiles(s) {
         bonds.push({ a: r.atom, b: prev, o });
         const dc = pendDir || r.dir;
         dir.push(dc ? { c: dc, from: pendDir ? prev : r.atom, to: pendDir ? r.atom : prev } : null);
+        const slot = order[r.atom].indexOf(r.slot); if (slot >= 0) order[r.atom][slot] = prev;
+        order[prev].push(r.atom);
         delete ringOpen[num];
-      } else ringOpen[num] = { atom: prev, o: pend, dir: pendDir };
+      } else { const slot = { ring: num }; order[prev].push(slot); ringOpen[num] = { atom: prev, o: pend, dir: pendDir, slot }; }
       pend = null; pendDir = null;
       continue;
     }
@@ -195,7 +247,7 @@ export function parseSmiles(s) {
       let el = m[2]; const arom = /^[a-z]$/.test(el); if (arom) el = el.toUpperCase();
       const hx = m[4] ? (m[4].length > 1 ? +m[4].slice(1) : 1) : 0;
       let q = 0; if (m[5]) q = (m[5][0] === '+' ? 1 : -1) * (m[5].length > 1 ? +m[5].slice(1) : 1);
-      addA(el, arom, q, hx);
+      addA(el, arom, q, hx, m[3]);
       i = end + 1; continue;
     }
     const two = s.substr(i, 2);
@@ -213,6 +265,13 @@ export function parseSmiles(s) {
     delete a._hx;
   });
   perceiveAromatic(mol);
+  /* 입체중심: 적힌 이웃 순서로 부호를 정한다 (@ = 반시계 = −1) */
+  for (const [idx, c] of chiral) {
+    const n = order[idx].map(x => x === 'H' ? -1 : x);
+    if (n.length !== 4 || n.some(x => typeof x !== 'number')) continue;
+    atoms[idx].chi = { n, s: c === '@@' ? 1 : -1 };
+    if (!chiralOK(mol, idx)) delete atoms[idx].chi;
+  }
   /* cis/trans 제약 */
   const stereo = [];
   bonds.forEach((b, k) => {
@@ -285,12 +344,16 @@ export function unsaturation(mol) {
 }
 export function heavyCount(mol) { return mol.atoms.length; }
 
-/* ── MOL 파일 (검증용) ─────────────────────────── */
-export function molblock(mol) {
+/* ── MOL 파일 (검증용). wedges: Map 결합 → { from, up } 이면 쐐기(1) · 점선 쐐기(6) 로 적는다 ── */
+export function molblock(mol, wedges) {
   const L = ['', '  hexa', ''];
   L.push(`${String(mol.atoms.length).padStart(3)}${String(mol.bonds.length).padStart(3)}  0  0  0  0  0  0  0  0999 V2000`);
   for (const a of mol.atoms) L.push(`${a.x.toFixed(4).padStart(10)}${a.y.toFixed(4).padStart(10)}${'0.0000'.padStart(10)} ${a.el.padEnd(3)} 0  0  0  0  0  0  0  0  0  0  0  0`);
-  for (const b of mol.bonds) L.push(`${String(b.a + 1).padStart(3)}${String(b.b + 1).padStart(3)}${String(b.o).padStart(3)}  0`);
+  mol.bonds.forEach((b, k) => {
+    const w = wedges && wedges.get(k);
+    const [p, q] = w && w.from === b.b ? [b.b, b.a] : [b.a, b.b];
+    L.push(`${String(p + 1).padStart(3)}${String(q + 1).padStart(3)}${String(b.o).padStart(3)}${String(w ? (w.up ? 1 : 6) : 0).padStart(3)}`);
+  });
   const ch = mol.atoms.map((a, i) => [i + 1, a.q]).filter(([, q]) => q);
   if (ch.length) L.push(`M  CHG${String(ch.length).padStart(3)}` + ch.map(([i, q]) => `${String(i).padStart(4)}${String(q).padStart(4)}`).join(''));
   L.push('M  END');
@@ -312,20 +375,31 @@ export function toSmiles(mol) {
   dfs0(0);
   const out = [];
   const sym = { 1: '', 2: '=', 3: '#' };
-  const atomStr = a => {
+  const atomStr = (a, chi) => {
     const plain = ['B', 'C', 'N', 'O', 'P', 'S', 'F', 'Cl', 'Br', 'I'];
-    if (!a.q && plain.includes(a.el)) return a.el;
-    return `[${a.el}${a.h ? 'H' + (a.h > 1 ? a.h : '') : ''}${a.q ? (a.q > 0 ? '+' : '-') + (Math.abs(a.q) > 1 ? Math.abs(a.q) : '') : ''}]`;
+    if (!a.q && !chi && plain.includes(a.el)) return a.el;
+    return `[${a.el}${chi || ''}${a.h ? 'H' + (a.h > 1 ? a.h : '') : ''}${a.q ? (a.q > 0 ? '+' : '-') + (Math.abs(a.q) > 1 ? Math.abs(a.q) : '') : ''}]`;
   };
   const walk = (i, from) => {
     seen[i] = true;
-    let s = atomStr(mol.atoms[i]);
-    for (const { j, k, o } of mol.nb[i]) {
+    const kids = mol.nb[i].filter(x => tree.has(x.k) && x.j !== from && !seen[x.j]);
+    /* 입체중심: 적는 순서(앞 원자, H, 고리 닫기, 가지)로 @ / @@ */
+    let chi = '';
+    if (chiralOK(mol, i)) {
+      const seq = [];
+      if (from >= 0) seq.push(from);
+      if (mol.atoms[i].h) seq.push(-1);
+      for (const { j, k } of mol.nb[i]) if (!tree.has(k)) seq.push(j);
+      for (const x of kids) seq.push(x.j);
+      const sg = chiSignFor(mol.atoms[i].chi, seq);
+      chi = sg > 0 ? '@@' : sg < 0 ? '@' : '';
+    }
+    let s = atomStr(mol.atoms[i], chi);
+    for (const { k, o } of mol.nb[i]) {
       if (tree.has(k)) continue;
       if (!closures.has(k)) { closures.set(k, ringNo++); s += sym[o] + closures.get(k); }
       else s += sym[o] + closures.get(k);
     }
-    const kids = mol.nb[i].filter(x => tree.has(x.k) && x.j !== from && !seen[x.j]);
     kids.forEach((x, idx) => {
       const sub = sym[x.o] + walk(x.j, i);
       s += idx < kids.length - 1 ? `(${sub})` : sub;

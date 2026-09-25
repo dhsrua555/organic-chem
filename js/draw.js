@@ -1,6 +1,8 @@
 /* 2D 구조식 (SVG). 모드: 'atoms' = 모든 원자를 CH₃ · CH₂ 처럼 표시, 'skeletal' = 골격 구조식(탄소는 꼭짓점).
-   주사슬 · 주고리는 파란 띠, 위치 번호는 작은 숫자, 입체중심은 *. 누를 수 있는 원자 · 결합 표시 */
+   주사슬 · 주고리는 파란 띠, 위치 번호는 작은 숫자. 입체중심: 배열이 정해졌으면 쐐기(앞) · 점선 쐐기(뒤) 와 R/S,
+   안 정해졌으면 *. cip 옵션을 주면 그 입체중심의 치환기 순위 ①②③④ 를 표시. 누를 수 있는 원자 · 결합 표시 */
 import { rings } from './chem/core.js';
+import { wedges, cipDetail } from './chem/stereo.js';
 
 const U = 50, FS = 15, CW = FS * 0.6;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -31,10 +33,11 @@ function spans(seq) {
     : p.sup ? `<tspan class="sp" dy="-6">${esc(p.t)}</tspan><tspan dy="6">​</tspan>` : esc(p.t)).join('');
 }
 
-/* opts: { interactive, mode, locants, chain, stars, pick, tool, hl(Set 강조 원자), compact } */
+/* opts: { interactive, mode, locants, chain, stars, pick, tool, hl(Set 강조 원자), compact, cip(입체중심 원자 번호), mark(★ 표시할 원자) } */
 export function drawMolecule(mol, res, opts = {}) {
   const mode = opts.mode || 'atoms';
   const A = mol.atoms, R = rings(mol);
+  const W = opts.stars === false ? new Map() : wedges(mol);
   const pri = res ? res.principalAtoms || new Set() : new Set();
   const hl = opts.hl || new Set();
   const labels = A.map((_, i) => labelOf(mol, i, mode));
@@ -65,7 +68,21 @@ export function drawMolecule(mol, res, opts = {}) {
     const cls = 'm-b' + hot;
     const line = (a1, b1, a2, b2, c = cls) => `<line class="${c}" x1="${r1(X(a1))}" y1="${r1(Y(b1))}" x2="${r1(X(a2))}" y2="${r1(Y(b2))}"/>`;
     const nx = -uy, ny = ux;
-    if (b.o === 1) out.bonds.push(line(x1, y1, x2, y2));
+    const wd = W.get(k);
+    if (b.o === 1 && wd) {
+      /* 쐐기: 입체중심 쪽이 뾰족. 앞으로 나오면 채운 삼각형, 뒤로 들어가면 점점 넓어지는 빗금 */
+      const fwd = wd.from === b.a;
+      const [sx, sy, ex, ey] = fwd ? [x1, y1, x2, y2] : [x2, y2, x1, y1];
+      const hw = 0.1;
+      if (wd.up) out.bonds.push(`<polygon class="m-w${hot}" points="${r1(X(sx))},${r1(Y(sy))} ${r1(X(ex + nx * hw))},${r1(Y(ey + ny * hw))} ${r1(X(ex - nx * hw))},${r1(Y(ey - ny * hw))}"/>`);
+      else {
+        const n = 7;
+        for (let t = 1; t <= n; t++) {
+          const f = t / n, px = sx + (ex - sx) * f, py = sy + (ey - sy) * f, w = hw * f;
+          out.bonds.push(line(px + nx * w, py + ny * w, px - nx * w, py - ny * w, 'm-h' + hot));
+        }
+      }
+    } else if (b.o === 1) out.bonds.push(line(x1, y1, x2, y2));
     else if (b.o === 3) {
       const o = 0.09;
       out.bonds.push(line(x1, y1, x2, y2), line(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o), line(x1 - nx * o, y1 - ny * o, x2 - nx * o, y2 - ny * o));
@@ -131,12 +148,46 @@ export function drawMolecule(mol, res, opts = {}) {
       out.locs.push(`<text class="m-loc${parentSet.has(ai) && res.parent.type !== 'chain' ? ' ring' : ''}" x="${r1(X(px))}" y="${r1(Y(py) + 4)}" text-anchor="middle">${esc(txt)}</text>`);
     }
   }
-  /* 입체중심 * */
+  /* 입체중심: R/S (배열이 정해짐) 또는 * (안 정해짐) */
   if (res && opts.stars !== false && res.centers) for (const i of res.centers) {
     const a = A[i];
     const dirs = mol.nb[i].map(({ j }) => Math.atan2(A[j].y - a.y, A[j].x - a.x) / RAD);
-    const f = freeAngle(dirs) + 40;
-    out.marks.push(`<text class="m-star" x="${r1(X(a.x + Math.cos(f * RAD) * 0.42))}" y="${r1(Y(a.y + Math.sin(f * RAD) * 0.42) + 5)}" text-anchor="middle">*</text>`);
+    if (opts.rsLabels === false && i !== opts.mark) continue;
+    const d = opts.rsLabels === false ? '?' : res.rs && res.rs.get(i);
+    /* 위치 번호가 가장 넓은 빈틈을 쓰므로 R/S 는 둘째 빈틈에 (충분히 넓을 때), 아니면 옆으로 비껴서. 고리 원자는 고리 바깥쪽 빈틈 */
+    const f = slotFor(mol, i, dirs, 1);
+    const rr = d ? (labels[i] ? 0.62 : 0.46) : 0.42;
+    const mx = a.x + Math.cos(f * RAD) * rr, my = a.y + Math.sin(f * RAD) * rr;
+    if (d) out.marks.push(`<text class="m-rs${opts.cip === i ? ' on' : ''}" x="${r1(X(mx))}" y="${r1(Y(my) + 5)}" text-anchor="middle">${d}</text>`);
+    else out.marks.push(`<text class="m-star" x="${r1(X(mx))}" y="${r1(Y(my) + 5)}" text-anchor="middle">*</text>`);
+    grow(mx, my, 0.2);
+  }
+  /* CIP 순위 ①②③④ */
+  if (opts.cip !== undefined && opts.cip !== null && A[opts.cip]) {
+    const c = opts.cip, C = A[c];
+    const det = cipDetail(mol, c, W);
+    if (det) det.ranked.forEach((j, k) => {
+      let px, py;
+      if (j >= 0) {
+        /* 결합 한가운데에 구슬처럼 (쐐기 결합이면 쐐기가 보이도록 옆으로 비켜서) */
+        const P = A[j];
+        px = (C.x + P.x) / 2; py = (C.y + P.y) / 2;
+        const bk = mol.nb[c].find(x => x.j === j).k;
+        if (W.has(bk)) { const dx = P.x - C.x, dy = P.y - C.y, L = Math.hypot(dx, dy) || 1; px += -dy / L * 0.26; py += dx / L * 0.26; }
+      } else {
+        /* 암시적 H: 위치 번호 · R/S 가 쓰지 않은 셋째 빈틈 */
+        const dirs = mol.nb[c].map(({ j: q }) => Math.atan2(A[q].y - C.y, A[q].x - C.x) / RAD);
+        const f = slotFor(mol, c, dirs, 2);
+        const rr = labels[c] ? 0.6 : 0.46;
+        px = C.x + Math.cos(f * RAD) * rr; py = C.y + Math.sin(f * RAD) * rr;
+      }
+      out.marks.push(`<g class="m-cip r${k + 1}"><circle cx="${r1(X(px))}" cy="${r1(Y(py))}" r="8.5"/><text x="${r1(X(px))}" y="${r1(Y(py) + 3.8)}" text-anchor="middle">${k + 1}</text>${j < 0 ? `<text class="h" x="${r1(X(px) + 11)}" y="${r1(Y(py) + 4)}">H</text>` : ''}</g>`);
+      grow(px, py, 0.2);
+    });
+  }
+  if (opts.mark !== undefined && opts.mark !== null && A[opts.mark]) {
+    const a = A[opts.mark];
+    out.band.push(`<circle class="m-mark" cx="${r1(X(a.x))}" cy="${r1(Y(a.y))}" r="${U * 0.42}"/>`);
   }
   const pad = 0.35;
   const w = Math.max(box.x1 - box.x0 + 2 * pad, 2.4), h = Math.max(box.y1 - box.y0 + 2 * pad, 1.6);
@@ -153,6 +204,28 @@ function hexPts(x, y, r) {
   const o = [];
   for (let k = 0; k < 6; k++) { const a = (60 * k + 30) * RAD; o.push(`${r1(X(x + Math.cos(a) * r))},${r1(Y(y + Math.sin(a) * r))}`); }
   return o.join(' ');
+}
+/* 입체중심 둘레의 표시 자리: k = 1 (R/S 글자), 2 (암시적 H 의 ④).
+   사슬 원자: 위치 번호가 가장 넓은 빈틈을 쓰므로 그다음 빈틈들. 고리 원자: 위치 번호가 고리 안쪽이므로 바깥 빈틈들 */
+function slotFor(mol, i, dirs, k) {
+  const R = rings(mol), A = mol.atoms, a = A[i];
+  let g = gaps(dirs);
+  if (R.of[i] >= 0) {
+    const ring = R.list[R.of[i]];
+    const cx = ring.reduce((s, q) => s + A[q].x, 0) / ring.length, cy = ring.reduce((s, q) => s + A[q].y, 0) / ring.length;
+    const inward = Math.atan2(cy - a.y, cx - a.x) / RAD;
+    const away = m => Math.abs((((m - inward) % 360) + 540) % 360 - 180);
+    g = g.filter(x => away(x.mid) > 60).sort((p, q) => q.size - p.size || away(q.mid) - away(p.mid));
+    const pick = g[k - 1] || g[0];
+    return pick ? pick.mid + (g[k - 1] ? 0 : (k === 1 ? 30 : -30)) : inward + 180;
+  }
+  return g[k] && g[k].size >= 95 ? g[k].mid : g[0].mid + (k === 1 ? 42 : -42);
+}
+/* 결합 사이 빈틈들 (넓은 것부터): [{ mid(가운데 각도), size }] */
+function gaps(dirs) {
+  if (!dirs.length) return [{ mid: 225, size: 360 }];
+  const a = dirs.map(d => ((d % 360) + 360) % 360).sort((p, q) => p - q);
+  return a.map((x, i) => { const nx = i + 1 < a.length ? a[i + 1] : a[0] + 360; return { mid: x + (nx - x) / 2, size: nx - x }; }).sort((p, q) => q.size - p.size);
 }
 function freeAngle(dirs) {
   if (!dirs.length) return 225;

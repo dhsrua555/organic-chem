@@ -6,11 +6,13 @@ import { drawMolecule } from '../draw.js';
 import { entry, tokensHTML, esc, store, getLang, onLang } from '../ui.js';
 import { TIMELINE } from '../data.js';
 import { commonName } from '../chem/common.js';
+import { defineMissing } from '../chem/stereo.js';
+import { rsCardHTML } from '../rsview.js';
 
 const EXAMPLES = {
-  sn: [['CCC(C)Br', '2-브로모뷰테인'], ['CC(C)(C)Br', 'tert-뷰틸 브로마이드'], ['CCCBr', '1-브로모프로페인'], ['CC(C)C(C)Br', '자리옮김이 되는 2차'], ['BrCc1ccccc1', '벤질 브로마이드']],
-  alc: [['CC(O)CC', '뷰탄-2-올'], ['CCCO', '프로판-1-올'], ['CC(C)(C)O', 'tert-뷰탄올'], ['OC1CCCCC1', '사이클로헥산올'], ['CC(C)C(C)O', '3-메틸뷰탄-2-올']],
-  ene: [['CC=C', '프로펜'], ['CC(C)=CC', '2-메틸뷰트-2-엔'], ['C1=CCCCC1', '사이클로헥센'], ['CC(C)(C)C=C', '3,3-다이메틸뷰트-1-엔'], ['C/C=C/C', '(E)-뷰트-2-엔']],
+  sn: [['C[C@@H](Br)CC', '(R)-2-브로모뷰테인'], ['CC(C)(C)Br', 'tert-뷰틸 브로마이드'], ['CCCBr', '1-브로모프로페인'], ['CC(C)C(C)Br', '자리옮김이 되는 2차'], ['BrCc1ccccc1', '벤질 브로마이드']],
+  alc: [['C[C@@H](O)CC', '(R)-뷰탄-2-올'], ['CCCO', '프로판-1-올'], ['CC(C)(C)O', 'tert-뷰탄올'], ['OC1CCCCC1', '사이클로헥산올'], ['CC(C)C(C)O', '3-메틸뷰탄-2-올']],
+  ene: [['CC=C', '프로펜'], ['CC(C)=CC', '2-메틸뷰트-2-엔'], ['C1=CCCCC1', '사이클로헥센'], ['CC(C)(C)C=C', '3,3-다이메틸뷰트-1-엔'], ['C/C=C/C', '(E)-뷰트-2-엔'], ['C/C=C\\C', '(Z)-뷰트-2-엔'], ['CC1=CCCCC1', '1-메틸사이클로헥센']],
   yne: [['CCC#C', '뷰트-1-아인'], ['CC#CC', '뷰트-2-아인'], ['C#Cc1ccccc1', '페닐아세틸렌']],
   co: [['CCC=O', '프로판알'], ['CC(=O)c1ccccc1', '아세토페논'], ['O=C1CCCCC1', '사이클로헥산온'], ['CCOC(C)=O', '아세트산 에틸'], ['CCC#N', '프로페인나이트릴'], ['OCCC(C)=O', 'OH 가 있는 케톤']],
   acyl: [['CC(=O)O', '아세트산'], ['CC(=O)Cl', '아세틸 클로라이드'], ['CCOC(=O)c1ccccc1', '벤조산 에틸'], ['CC(N)=O', '아세트아마이드'], ['CCC#N', '프로페인나이트릴']],
@@ -19,14 +21,16 @@ const EXAMPLES = {
   cc: [['CC=O', '아세트알데하이드'], ['CCOC(C)=O', '아세트산 에틸'], ['C=CC=C', '뷰타-1,3-다이엔'], ['C=CC(C)=C', '아이소프렌'], ['Brc1ccccc1', '브로모벤젠'], ['C=CCCCC=C', '헵타-1,6-다이엔'], ['C=CCCC', '펜트-1-엔']]
 };
 const ROLE = { major: '주생성물', minor: '부생성물', side: '함께 생김' };
-const pack = m => ({ a: m.atoms.map(x => [x.el, x.h, x.q || 0, +x.x.toFixed(3), +x.y.toFixed(3)]), b: m.bonds.map(x => [x.a, x.b, x.o, x.arom ? 1 : 0]) });
-const unpack = p => makeMol(p.a.map(([el, h, q, x, y]) => ({ el, h, q, x, y })), p.b.map(([a, b, o, ar]) => ({ a, b, o, arom: !!ar })));
+const pack = m => ({ a: m.atoms.map(x => [x.el, x.h, x.q || 0, +x.x.toFixed(3), +x.y.toFixed(3), x.chi ? [...x.chi.n, x.chi.s] : 0]), b: m.bonds.map(x => [x.a, x.b, x.o, x.arom ? 1 : 0]) });
+const unpack = p => makeMol(p.a.map(([el, h, q, x, y, c]) => Object.assign({ el, h, q, x, y }, c ? { chi: { n: c.slice(0, 4), s: c[4] } } : {})), p.b.map(([a, b, o, ar]) => ({ a, b, o, arom: !!ar })));
+/* 기질의 입체중심은 늘 배열을 정해 둔다 (SN2 반전 · SN1 라세미가 보이도록) */
+const sub0 = m => defineMissing(m);
 
 export function mount(root, app, params) {
   const saved = store.get('react', null);
   let mol;
-  try { mol = params && params.mol ? params.mol : params && params.smiles ? fromSmiles(params.smiles) : saved ? unpack(saved.mol) : fromSmiles('CCC(C)Br'); }
-  catch { mol = fromSmiles('CCC(C)Br'); }
+  try { mol = sub0(params && params.mol ? params.mol : params && params.smiles ? fromSmiles(params.smiles) : saved ? unpack(saved.mol) : fromSmiles('C[C@@H](Br)CC')); }
+  catch { mol = sub0(fromSmiles('C[C@@H](Br)CC')); }
   const S = { mol, cat: (params && params.cat) || (saved && saved.cat) || null, rid: (params && params.rid) || null, res: null };
   const mode = () => store.get('drawMode', 'atoms');
 
@@ -99,7 +103,7 @@ export function mount(root, app, params) {
       return `<figure class="rx-prod ${p.role}">
         <span class="rx-role">${ROLE[p.role] || ''}${p.pct ? ` · ${p.pct}%` : ''}</span>
         ${drawMolecule(p.mol, p.name, { mode: mode(), locants: false, chain: false, hl: p.hl, compact: true })}
-        <figcaption>${p.name ? `<span class="mono">${tokensHTML(ko ? p.name.ko : p.name.en)}</span><small>${esc(nm2(p))}${common ? ' · ' + esc(ko ? common.ko : common.en) : ''}</small>` : `<span class="muted">${esc(p.err || '')}</span>`}${p.tag ? `<em>${esc(p.tag)}</em>` : ''}</figcaption>
+        <figcaption>${p.name ? `<span class="mono">${tokensHTML(ko ? p.name.ko : p.name.en)}</span><small>${esc(nm2(p))}${common ? ' · ' + esc(ko ? common.ko : common.en) : ''}</small>` : `<span class="muted">${esc(p.err || '')}</span>`}${p.tag ? `<em>${esc(p.tag)}</em>` : ''}${p.stereoTag ? `<em class="st">${esc(p.stereoTag)}${p.mirrorName ? ' · ' + esc(ko ? p.mirrorName.ko : p.mirrorName.en) : ''}</em>` : ''}</figcaption>
       </figure>`;
     };
     const major = res.products.filter(p => p.role === 'major'), others = res.products.filter(p => p.role !== 'major');
@@ -112,27 +116,33 @@ export function mount(root, app, params) {
         </div>
         ${others.length ? `<div class="rx-minor"><p class="lbl">부생성물 · 함께 생기는 것</p><div class="rx-prods small">${others.map(prodHTML).join('')}</div></div>` : ''}
       </div>
+      ${rsBlock(rsProd = major.find(p => p.name && p.name.rs && p.name.rs.size))}
       ${res.steps && res.steps.length ? `<div class="panel"><p class="lbl" style="padding:16px 18px 0;margin:0">어떻게 일어나나</p><ol class="steps">${res.steps.map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}${s.mol ? `<div class="step-mol">${drawMolecule(s.mol, null, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : ''}</div></li>`).join('')}</ol></div>` : ''}
-      ${res.select && res.select.length ? `<div class="changes"><p class="lbl">선택성 · 예측의 근거</p><ul>${res.select.map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>` : ''}
+      ${res.select && res.select.length || res.stereoLine ? `<div class="changes"><p class="lbl">선택성 · 예측의 근거</p><ul>${res.stereoLine ? `<li><b>R/S: ${esc(res.stereoLine)}</b></li>` : ''}${(res.select || []).map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>` : ''}
       ${res.modern && res.modern.length ? `<div class="modern panel"><p class="lbl">교과서 이후 · 지금의 이해</p>${res.modern.map(m => `<p><span class="ty">${esc(m.y)}</span>${esc(m.t)}</p>`).join('')}</div>` : ''}
       <div class="tools-row"><button class="btn" type="button" id="r-take">주생성물을 새 기질로</button><button class="btn" type="button" id="r-build">주생성물을 분자 조립에서</button><button class="btn" type="button" id="r-quiz">반응 퀴즈</button></div>`;
     const first = major.find(p => p.name);
     box.querySelector('#r-take').disabled = !first; box.querySelector('#r-build').disabled = !first;
-    box.querySelector('#r-take').addEventListener('click', () => { if (!first) return; S.mol = first.mol; S.rid = null; S.res = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol)); });
+    box.querySelector('#r-take').addEventListener('click', () => { if (!first) return; S.mol = sub0(first.mol); S.rid = null; S.res = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol)); });
     box.querySelector('#r-build').addEventListener('click', () => first && app.go('build', { mol: first.mol }));
     box.querySelector('#r-quiz').addEventListener('click', () => app.go('quiz', { mode: 'react' }));
   }
+  /* 주생성물의 R/S 풀이 (입체중심이 있을 때) */
+  let rsProd = null;
+  const rsBlock = (p, sel) => p ? rsCardHTML(p.mol, p.name, { ko: getLang() === 'ko', racemic: true, sel }).replace('입체중심 R/S · CIP 순위 규칙', '주생성물의 R/S · CIP 순위') : '';
   const placeholder = () => `<div class="panel rx-empty"><p class="lbl">예측 결과</p><p>왼쪽에서 시약을 누르면 생성물이 여기에 나타납니다.</p><p class="hint">밝게 표시된 시약이 이 기질과 반응할 수 있는 것입니다. 흐린 시약을 눌러도 왜 반응하지 않는지 알려 줍니다.</p></div>`;
 
   root.addEventListener('click', e => {
+    const t = e.target.closest('.rs-card [data-cip]');
+    if (t && rsProd) { t.closest('.rs-card').outerHTML = rsBlock(rsProd, +t.dataset.cip); return; }
     const c = e.target.closest('[data-cat]'); if (c) { S.cat = c.dataset.cat; paintSub(); return; }
     const r = e.target.closest('[data-rid]'); if (r) { run(r.dataset.rid); if (innerWidth < 900) q('.rx-right').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    const s = e.target.closest('[data-smi]'); if (s) { S.mol = fromSmiles(s.dataset.smi); S.res = null; S.rid = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol)); }
+    const s = e.target.closest('[data-smi]'); if (s) { S.mol = sub0(fromSmiles(s.dataset.smi)); S.res = null; S.rid = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol)); }
   });
   q('#r-from').addEventListener('click', () => {
     const b = store.get('build2', null);
     if (!b) return;
-    S.mol = unpack(b.mol); S.res = null; S.rid = null; S.cat = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol));
+    S.mol = sub0(unpack(b.mol)); S.res = null; S.rid = null; S.cat = null; paintSub(); q('.rx-right').innerHTML = placeholder(); app.setMol(entry(S.mol));
   });
   q('#r-edit').addEventListener('click', () => app.go('build', { mol: S.mol }));
   const off = onLang(() => { paintSub(); if (S.res) paintResult(); });

@@ -1,7 +1,10 @@
 /* 분자 조립: 뼈대 · 유명한 분자에서 시작해 원자를 눌러 조각을 붙이고, 결합을 바꾸고, 가지를 지운다.
-   이름 · 풀이 · 바뀐 점 · 비교 목록을 곧바로 보여 준다 */
+   이름 · 풀이 · 바뀐 점 · 비교 목록을 곧바로 보여 준다. 입체중심은 늘 배열(R/S)을 정해 두고 R/S 도구로 뒤집는다.
+   비교 목록은 무거워서 바로 그리지 않고 잠깐 뒤에 채운다 (연달아 눌러도 끊기지 않게) */
 import { FRAGMENTS, FRAG_GROUPS, TEMPLATES, fromSmiles, attach, cycleBond, removeBranch, flipEZ, tidy } from '../chem/edit.js';
 import { makeMol, toSmiles, unsaturation } from '../chem/core.js';
+import { defineMissing, flipCenter, mirror } from '../chem/stereo.js';
+import { rsCardHTML } from '../rsview.js';
 import { CLASS } from '../chem/name.js';
 import { steps, diff, noteText } from '../chem/explain.js';
 import { drawMolecule, templateIcon } from '../draw.js';
@@ -12,14 +15,15 @@ const TOOLS = [
   ['add', '붙이기', '원자를 누르면 고른 조각이 붙습니다 (H 하나를 바꿈)'],
   ['bond', '결합', '탄소–탄소 결합을 누를 때마다 단일 → 이중 → 삼중'],
   ['erase', '지우기', '원자를 누르면 그 원자와 바깥 가지를 지웁니다'],
-  ['flip', 'E/Z', '이중결합을 누르면 E ↔ Z 로 뒤집습니다']
+  ['flip', 'E/Z', '이중결합을 누르면 E ↔ Z 로 뒤집습니다'],
+  ['rs', 'R/S', '입체중심(치환기 넷이 모두 다른 탄소, 그림의 R · S)을 누르면 거울상 배열로 뒤집습니다']
 ];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const FAMOUS = TEMPLATES.filter(t => t.kind === 'famous');
 
 /* 저장용: 원자 · 결합만 */
-const pack = m => ({ a: m.atoms.map(x => [x.el, x.h, x.q || 0, +x.x.toFixed(3), +x.y.toFixed(3)]), b: m.bonds.map(x => [x.a, x.b, x.o, x.arom ? 1 : 0]) });
-const unpack = p => makeMol(p.a.map(([el, h, q, x, y]) => ({ el, h, q, x, y })), p.b.map(([a, b, o, ar]) => ({ a, b, o, arom: !!ar })));
+const pack = m => ({ a: m.atoms.map(x => [x.el, x.h, x.q || 0, +x.x.toFixed(3), +x.y.toFixed(3), x.chi ? [...x.chi.n, x.chi.s] : 0]), b: m.bonds.map(x => [x.a, x.b, x.o, x.arom ? 1 : 0]) });
+const unpack = p => makeMol(p.a.map(([el, h, q, x, y, c]) => Object.assign({ el, h, q, x, y }, c ? { chi: { n: c.slice(0, 4), s: c[4] } } : {})), p.b.map(([a, b, o, ar]) => ({ a, b, o, arom: !!ar })));
 
 export function mount(root, app, params) {
   const saved = store.get('build2', null);
@@ -27,8 +31,8 @@ export function mount(root, app, params) {
   try { start = params && params.smiles ? fromSmiles(params.smiles) : params && params.mol ? params.mol : saved ? unpack(saved.mol) : fromSmiles('C=CC'); }
   catch { start = fromSmiles('C=CC'); }
   const S = {
-    mol: start, tool: 'add', sel: (saved && saved.sel) || 'OH', mode: store.get('drawMode', 'atoms'),
-    hist: [], redo: [], prev: null, pick: null, msg: '', lastFrag: (params && params.focusGroup) || null
+    mol: defineMissing(start), tool: 'add', sel: (saved && saved.sel) || 'OH', mode: store.get('drawMode', 'atoms'),
+    hist: [], redo: [], prev: null, pick: null, msg: '', lastFrag: (params && params.focusGroup) || null, cip: null
   };
   if (!FRAGMENTS[S.sel]) S.sel = 'OH';
 
@@ -86,7 +90,7 @@ export function mount(root, app, params) {
     S.hist.push(S.mol); if (S.hist.length > 80) S.hist.shift();
     S.redo = [];
     S.prev = cur;
-    S.mol = m; S.msg = '';
+    S.mol = defineMissing(m); S.msg = '';
     if (frag) S.lastFrag = frag;
     save(); render(true);
   }
@@ -97,7 +101,8 @@ export function mount(root, app, params) {
     const m = cur.mol, r = cur.res;
     const nC = m.atoms.filter(a => a.el === 'C').length;
     q('.stage-count').textContent = `원자 ${m.atoms.length} · 탄소 ${nC}`;
-    q('.svgwrap').innerHTML = drawMolecule(m, r, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick });
+    if (!r || !r.rs || !r.rs.has(S.cip)) S.cip = r && r.rs && r.rs.size && S.tool === 'rs' ? r.rs.keys().next().value : null;
+    q('.svgwrap').innerHTML = drawMolecule(m, r, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick, cip: S.cip });
     const cls = r ? (r.P ? CLASS[r.P].ko : r.enes.length || r.ynes.length ? (r.ynes.length ? '알카인' : '알켄') : r.kind === 'benzene' || r.kind === 'biphenyl' ? '방향족 탄화수소' : m.atoms.some(a => a.el !== 'C') ? '치환 탄화수소' : r.kind === 'ring' ? '사이클로알케인' : '알케인') : '—';
     q('.stage-foot').innerHTML = `<span><em>분자식</em>${formulaHTML(cur.f)}</span><span><em>몰질량</em>${cur.f.mass.toFixed(2)} g/mol</span><span><em>분류</em>${cls}</span><span><em>불포화도</em>${unsaturation(m)}</span><span class="smi"><em>SMILES</em>${esc(toSmiles(m))}</span>`;
     renderResult();
@@ -106,7 +111,6 @@ export function mount(root, app, params) {
   }
 
   function renderResult() {
-    rowsCache = [];
     const r = cur.res, ko = getLang() === 'ko';
     if (!r) {
       q('.result').innerHTML = `<div class="nm panel ticks"><p class="lbl">IUPAC 이름</p><p class="name-main muted">이름을 짓지 못했습니다</p><p class="note warn">${esc(cur.err || '')}</p><p class="hint">되돌리기로 한 단계 전으로 돌아가 보세요.</p></div>`;
@@ -118,8 +122,6 @@ export function mount(root, app, params) {
     const notes = (r.notes || []).map(noteText).filter(Boolean);
     const d = S.prev && S.prev.res ? diff(S.prev.mol, S.prev.res, cur.mol, r) : [];
     const frag = S.lastFrag || S.sel;
-    const cmpB = S.tool === 'add' && cur.mol.atoms.length <= 40 ? compareSites(frag === S.sel ? S.sel : S.sel) : [];
-    const cmpA = compareBases(frag);
     q('.result').innerHTML = `
       <div class="nm panel ticks">
         <button class="copy" type="button" id="b-copy">복사</button>
@@ -130,22 +132,37 @@ export function mount(root, app, params) {
         <p class="legend" aria-hidden="true"><span class="l-loc">위치 번호</span><span class="l-pre">접두사</span><span class="l-par">모체(어근)</span><span class="l-une">불포화</span><span class="l-suf">접미사</span>${r.stereo ? '<span class="l-ste">입체</span>' : ''}</p>
       </div>
       ${d.length ? `<div class="changes"><p class="lbl">방금 바뀐 것</p><p class="from">${esc(S.prev.res.nameEn)} → ${esc(r.nameEn)}</p><ul>${d.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
+      ${rsCardHTML(cur.mol, r, { sel: S.cip, ko, mirrorBtn: true })}
       ${notes.length ? `<div class="notes">${notes.map(n => `<p class="note ${n.tone}">${n.t}</p>`).join('')}</div>` : ''}
       <div class="panel"><p class="lbl" style="padding:16px 18px 0;margin:0">이름 짓는 과정</p><ol class="steps">${st.map(s => `<li><div><span class="sk">${s.k}</span>${s.t}</div></li>`).join('')}</ol></div>
-      ${cmpB.length ? `<div class="cmp panel"><p class="lbl">원자마다 ${LBL(FRAGMENTS[S.sel].label)} 붙여 보기</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : ''}
-      ${cmpA.length ? `<div class="cmp panel"><p class="lbl">${LBL(FRAGMENTS[frag].label)} 하나를 여러 뼈대에 붙이면</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : ''}`;
+      <div class="cmp-slot"></div>`;
+    root.querySelectorAll('.rs-tabs [data-cip]').forEach(bt => bt.addEventListener('click', () => { S.cip = +bt.dataset.cip; renderSvgOnly(); renderResult(true); }));
+    const mb = q('#b-mirror'); if (mb) mb.addEventListener('click', () => commit(mirror(S.mol)));
+    /* 비교 목록: 잠깐 뒤에 (그 사이 또 바뀌면 취소) */
+    const token = ++cmpToken;
+    clearTimeout(cmpTimer);
+    cmpTimer = setTimeout(() => {
+      if (token !== cmpToken || !cur.res) return;
+      rowsCache = [];
+      const cmpB = S.tool === 'add' && cur.mol.atoms.length <= 40 ? compareSites(S.sel) : [];
+      const cmpA = compareBases(frag);
+      const slot = q('.cmp-slot'); if (!slot) return;
+      slot.innerHTML = `${cmpB.length ? `<div class="cmp panel"><p class="lbl">원자마다 ${LBL(FRAGMENTS[S.sel].label)} 붙여 보기</p><ul class="cmp-list">${cmpB.map(rowHTML).join('')}</ul></div>` : ''}
+        ${cmpA.length ? `<div class="cmp panel"><p class="lbl">${LBL(FRAGMENTS[frag].label)} 하나를 여러 뼈대에 붙이면</p><ul class="cmp-list">${cmpA.map(rowHTML).join('')}</ul></div>` : ''}`;
+      slot.querySelectorAll('.cmp-list button').forEach((bt, i) => bt.addEventListener('click', () => {
+        const x = rowsCache[i];
+        commit(x.mol, x.frag);
+        if (innerWidth < 900) q('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }));
+    }, skipCmpDelay ? 0 : 180);
     q('#b-copy').addEventListener('click', async e => {
       const ok = await copyText(r.nameEn, q('.name-main'));
       e.target.textContent = ok ? '복사됨' : '선택됨';
       setTimeout(() => { e.target.textContent = '복사'; }, 1400);
     });
-    root.querySelectorAll('.cmp-list button').forEach((bt, i) => bt.addEventListener('click', () => {
-      const x = rowsCache[i];
-      commit(x.mol, x.frag);
-      if (innerWidth < 900) q('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }));
   }
-  let rowsCache = [];
+  let rowsCache = [], cmpToken = 0, cmpTimer = 0;
+  const skipCmpDelay = false;
   const baseCache = new Map();
   function rowHTML(x) {
     const ko = getLang() === 'ko';
@@ -195,6 +212,11 @@ export function mount(root, app, params) {
       let r;
       if (S.tool === 'add') r = attach(S.mol, i, S.sel);
       else if (S.tool === 'erase') r = removeBranch(S.mol, i, 0);
+      else if (S.tool === 'rs') {
+        r = flipCenter(S.mol, i);
+        if (r.error) { S.msg = r.error + (cur.res && cur.res.centers.length ? '' : ' — 지금 분자에는 입체중심이 없습니다. 예: 뷰테인의 2번 탄소에 OH 를 붙여 보세요'); paintTools(); return; }
+        S.cip = i; commit(r.mol); return;
+      }
       else { S.msg = S.tool === 'bond' ? '결합(원자 사이의 선)을 눌러 주세요' : '이중결합을 눌러 주세요'; paintTools(); return; }
       if (r.error) { S.msg = r.error; paintTools(); return; }
       S.pick = S.tool === 'add' ? i : null;
@@ -218,13 +240,13 @@ export function mount(root, app, params) {
   });
   const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; commit(fromSmiles(t.smi)); };
   root.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
-  root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; paintTools(); renderSvgOnly(); });
+  root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; paintTools(); render(false); });
   root.querySelector('.palette-wrap').addEventListener('click', e => {
     const b = e.target.closest('[data-g]'); if (!b) return;
     S.sel = b.dataset.g; S.tool = 'add'; S.msg = ''; save(); paintTools(); renderResult();
   });
   root.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('drawMode', S.mode); paintTools(); renderSvgOnly(); }));
-  function renderSvgOnly() { q('.svgwrap').innerHTML = drawMolecule(cur.mol, cur.res, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick }); }
+  function renderSvgOnly() { q('.svgwrap').innerHTML = drawMolecule(cur.mol, cur.res, { interactive: true, tool: S.tool, mode: S.mode, pick: S.pick, cip: S.cip }); }
   q('#b-undo').addEventListener('click', () => { const h = S.hist.pop(); if (!h) return; S.redo.push(S.mol); S.prev = cur; S.mol = h; S.pick = null; save(); render(true); });
   q('#b-redo').addEventListener('click', () => { const h = S.redo.pop(); if (!h) return; S.hist.push(S.mol); S.prev = cur; S.mol = h; S.pick = null; save(); render(true); });
   q('#b-tidy').addEventListener('click', () => commit(tidy(S.mol)));

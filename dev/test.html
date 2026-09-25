@@ -85,7 +85,15 @@ const CASES = [
   ['NCCc1ccc(O)c(O)c1', '4-(2-aminoethyl)benzene-1,2-diol'], ['COc1ccc(C=O)cc1', '4-methoxybenzaldehyde'],
   ['CC(C)=CCC/C(C)=C/CO', '(E)-3,7-dimethylocta-2,6-dien-1-ol'], ['COc1cc(CNC(=O)CCCC/C=C/C(C)C)ccc1O', '(E)-N-[(4-hydroxy-3-methoxyphenyl)methyl]-8-methylnon-6-enamide'],
   ['CCOc1ccccc1', 'ethoxybenzene'], ['CC(C)Oc1ccccc1', '[(propan-2-yl)oxy]benzene'], ['ClCCOc1ccccc1', '(2-chloroethoxy)benzene'], ['Oc1ccc(OCc2ccccc2)cc1', '4-(benzyloxy)phenol'],
-  ['CC(=O)OCC(=O)O', '2-(acetyloxy)ethanoic acid'], ['CCOC(=O)C(=O)OCC', 'diethyl ethanedioate'], ['COC(=O)CCC(=O)OCC', '1-ethyl 4-methyl butanedioate', '뷰테인다이오산 1-에틸 4-메틸']
+  ['CC(=O)OCC(=O)O', '2-(acetyloxy)ethanoic acid'], ['CCOC(=O)C(=O)OCC', 'diethyl ethanedioate'], ['COC(=O)CCC(=O)OCC', '1-ethyl 4-methyl butanedioate', '뷰테인다이오산 1-에틸 4-메틸'],
+  /* ── R/S (RDKit CIP 로 확인) ── */
+  ['C[C@@H](O)CC', '(R)-butan-2-ol', '(R)-뷰탄-2-올'], ['C[C@H](O)CC', '(S)-butan-2-ol'], ['CC[C@@H](C)Br', '(R)-2-bromobutane'],
+  ['N[C@@H](C)C(=O)O', '(S)-2-aminopropanoic acid'], ['C[C@@H](O)[C@H](C)O', '(2R,3S)-butane-2,3-diol'], ['C[C@@H](O)[C@@H](C)O', '(2R,3R)-butane-2,3-diol'],
+  ['CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', '(1R,2S,5R)-5-methyl-2-(propan-2-yl)cyclohexan-1-ol'], ['CC1=CC[C@@H](CC1)C(=C)C', '(R)-1-methyl-4-(prop-1-en-2-yl)cyclohex-1-ene'],
+  ['CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', '(S)-2-[4-(2-methylpropyl)phenyl]propanoic acid'], ['C/C=C/[C@@H](C)O', '(2R,3E)-pent-3-en-2-ol', '(2R,3E)-펜트-3-엔-2-올'],
+  ['C[C@@H](c1ccccc1)NC(C)=O', 'N-[(S)-1-phenylethyl]ethanamide'], ['O=C(O)[C@@H](O)[C@H](O)C(=O)O', '(2S,3S)-2,3-dihydroxybutanedioic acid'],
+  ['Br[C@@H]1CCCC[C@H]1Br', '(1R,2R)-1,2-dibromocyclohexane'], ['C[C@H](Cl)[C@@H](C)CC', '(2S,3S)-2-chloro-3-methylpentane'],
+  ['CCC[C@@H](C)C(=O)OC', 'methyl (R)-2-methylpentanoate'], ['C[C@@H](O)CC(=O)O[C@@H](C)CC', '(S)-butan-2-yl (R)-3-hydroxybutanoate']
 ];
 
 const out = [];

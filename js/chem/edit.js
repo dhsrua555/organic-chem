@@ -1,5 +1,6 @@
-/* 분자 편집: 조각 붙이기, 결합 차수 바꾸기, 가지 지우기, E/Z 뒤집기. 매번 새 분자를 돌려준다 (되돌리기용) */
-import { parseSmiles, clone, addBond, setOrder, fixH, removeAtoms, rings, perceiveAromatic, maxValence } from './core.js';
+/* 분자 편집: 조각 붙이기, 결합 차수 바꾸기, 가지 지우기, E/Z 뒤집기. 매번 새 분자를 돌려준다 (되돌리기용).
+   입체중심의 배열(chi)은 그대로 따라간다: 입체중심의 H 자리에 붙이면 붙인 조각이 그 H 자리를 차지한다 */
+import { parseSmiles, clone, addBond, setOrder, fixH, removeAtoms, rings, perceiveAromatic, maxValence, cleanChi } from './core.js';
 import { layout, stereoFromCoords, branch } from './layout.js';
 import { checkSupported } from './name.js';
 
@@ -46,14 +47,17 @@ export const TEMPLATES = [
   { id: 'cyclohexene', smi: 'C1=CCCCC1', ko: '사이클로헥센', kind: 'base' },
   { id: 'cyclopentane', smi: 'C1CCCC1', ko: '사이클로펜테인', kind: 'base' },
   { id: 'benzene', smi: 'c1ccccc1', ko: '벤젠', kind: 'base' },
-  { id: 'ibuprofen', smi: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O', ko: '이부프로펜', kind: 'famous', note: '진통 · 소염제' },
+  { id: 'ibuprofen', smi: 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', ko: '이부프로펜', kind: 'famous', note: '진통 · 소염제 (S 가 약효)' },
   { id: 'aspirin', smi: 'CC(=O)Oc1ccccc1C(=O)O', ko: '아스피린', kind: 'famous', note: '해열 · 진통제' },
   { id: 'paracetamol', smi: 'CC(=O)Nc1ccc(O)cc1', ko: '아세트아미노펜', kind: 'famous', note: '해열 진통제 (타이레놀)' },
   { id: 'vanillin', smi: 'COc1cc(C=O)ccc1O', ko: '바닐린', kind: 'famous', note: '바닐라 향' },
   { id: 'capsaicin', smi: 'COc1cc(CNC(=O)CCCC/C=C/C(C)C)ccc1O', ko: '캡사이신', kind: 'famous', note: '고추의 매운맛' },
   { id: 'geraniol', smi: 'CC(C)=CCC/C(C)=C/CO', ko: '제라니올', kind: 'famous', note: '장미 향' },
-  { id: 'limonene', smi: 'CC1=CCC(CC1)C(=C)C', ko: '리모넨', kind: 'famous', note: '귤 껍질 향' },
-  { id: 'menthol', smi: 'CC(C)C1CCC(C)CC1O', ko: '멘톨', kind: 'famous', note: '박하' },
+  { id: 'limonene', smi: 'CC1=CC[C@@H](CC1)C(=C)C', ko: '리모넨', kind: 'famous', note: '귤 껍질 향 (R) · S 는 송진 향' },
+  { id: 'menthol', smi: 'CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', ko: '멘톨', kind: 'famous', note: '박하 (1R,2S,5R)' },
+  { id: 'alanine', smi: 'C[C@H](N)C(=O)O', ko: 'L-알라닌', kind: 'famous', note: '아미노산 (S)' },
+  { id: 'lactic', smi: 'C[C@H](O)C(=O)O', ko: 'L-젖산', kind: 'famous', note: '근육 · 요구르트 (S)' },
+  { id: 'carvone', smi: 'CC1=CC[C@H](CC1=O)C(=C)C', ko: '카본', kind: 'famous', note: '(R) 스피어민트 향 · 거울상 (S) 는 캐러웨이 향' },
   { id: 'dopamine', smi: 'NCCc1ccc(O)c(O)c1', ko: '도파민', kind: 'famous', note: '신경전달물질' },
   { id: 'benzocaine', smi: 'CCOC(=O)c1ccc(N)cc1', ko: '벤조카인', kind: 'famous', note: '국소 마취제' },
   { id: 'ethylacetate', smi: 'CCOC(C)=O', ko: '아세트산 에틸', kind: 'famous', note: '매니큐어 제거제 향' },
@@ -84,8 +88,11 @@ export function attach(mol, i, fragId) {
   addBond(m, i, base, order);
   m.atoms[i].h -= order;
   m.atoms[base].h = Math.max(0, m.atoms[base].h - order);
+  const chi = m.atoms[i].chi;
+  if (chi && order === 1 && chi.n.includes(-1)) m.atoms[i] = { ...m.atoms[i], chi: { n: chi.n.map(j => j < 0 ? base : j), s: chi.s } };
   m._rings = null;
   perceiveAromatic(m);
+  cleanChi(m);
   try { checkSupported(m); } catch (e) { return { error: e.message }; }
   layout(m, { root: 0, stereo, orient: false });
   return { mol: m };
@@ -115,6 +122,7 @@ export function cycleBond(mol, k) {
     if (m.atoms[b.a].h < 0 || m.atoms[b.b].h < 0) continue;
     if (m.nb[b.a].reduce((s, n) => s + n.o, 0) > maxValence(m.atoms[b.a]) || m.nb[b.b].reduce((s, n) => s + n.o, 0) > maxValence(m.atoms[b.b])) continue;
     perceiveAromatic(m);
+    cleanChi(m);
     layout(m, { root: 0, stereo: stereo.filter(s => !(s.a === b.a && s.b === b.b) && !(s.a === b.b && s.b === b.a)), orient: false });
     return { mol: m };
   }
@@ -145,6 +153,7 @@ export function removeBranch(mol, i, root = 0) {
   for (const n of anchor) { const ni = map.get(n.j); if (ni !== undefined) { m.atoms[ni].h += n.o; } }
   const st = stereo.map(s => ({ ...s, x: map.get(s.x), a: map.get(s.a), b: map.get(s.b), y: map.get(s.y) })).filter(s => [s.x, s.a, s.b, s.y].every(v => v !== undefined));
   perceiveAromatic(m);
+  cleanChi(m);
   layout(m, { root: 0, stereo: st, orient: false });
   return { mol: m };
 }

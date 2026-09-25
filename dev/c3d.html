@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>3D 좌표가 R/S 를 지키는지</title>
+<pre id="out"></pre>
+<script type="module">
+import { orient4, chiralOK } from '../js/chem/core.js';
+import { embed3d } from '../js/chem/geom3d.js';
+import { TEMPLATES, fromSmiles, attach } from '../js/chem/edit.js';
+import { defineMissing, flipCenter, stereoInfo } from '../js/chem/stereo.js';
+/* 무작위 분자에 무작위 배열을 주고 3D 로 만든 뒤, 입체중심마다 네 이웃의 방향이 chi 와 같은지 */
+let seed = 7;
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const pick = a => a[Math.floor(rnd() * a.length)];
+const frags = ['CH3', 'CH3', 'OH', 'NH2', 'Cl', 'Br', 'COOH', 'CHO', 'C2H5', 'phenyl', 'OCH3', 'CN', 'F'];
+const bases = TEMPLATES.filter(t => t.kind === 'base' || t.kind === 'famous');
+let centers = 0, bad = 0, mols = 0, ms = 0;
+const L = [];
+for (let t = 0; t < 1500; t++) {
+  let m = fromSmiles(pick(bases).smi);
+  for (let k = 0; k < 1 + Math.floor(rnd() * 5); k++) {
+    const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0 && m.atoms[i].el === 'C');
+    if (!at.length) break;
+    const r = attach(m, pick(at), pick(frags)); if (r.mol) m = r.mol;
+  }
+  m = defineMissing(m);
+  for (const c of stereoInfo(m).centers) if (rnd() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
+  const cs = stereoInfo(m).centers.filter(c => chiralOK(m, c));
+  if (!cs.length) continue;
+  mols++;
+  const t0 = performance.now();
+  const g = embed3d(m);
+  ms += performance.now() - t0;
+  /* 3D 에서 H 원자 번호: 무거운 원자 뒤에 원자 순서대로 붙어 있음 */
+  const hIdx = []; let k = m.atoms.length;
+  m.atoms.forEach((a, i) => { hIdx[i] = []; for (let h = 0; h < a.h; h++) hIdx[i].push(k++); });
+  for (const c of cs) {
+    centers++;
+    const n = m.atoms[c].chi.n.map(j => j < 0 ? hIdx[c][0] : j);
+    const o = orient4(...n.map(j => g.atoms[j].p));
+    if (o !== m.atoms[c].chi.s) { bad++; if (L.length < 10) L.push('BAD ' + c + ' ' + JSON.stringify(m.atoms.map(a => a.el).join(''))); }
+  }
+}
+L.push(`molecules ${mols}, centers ${centers}, wrong in 3D ${bad}, embed avg ${(ms / mols).toFixed(2)} ms`);
+L.push(bad ? 'RESULT: FAIL' : 'RESULT: ALL OK');
+document.getElementById('out').textContent = L.join('\n');
+window.__done = true;
+</script>

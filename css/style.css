@@ -446,7 +446,7 @@ body.focus3d .focus-bar { pointer-events: auto; }
 .fam-list button b { font-weight: 500; }
 .fam-list button small { color: var(--muted); font-size: 11px; }
 .fam-list button:hover { border-color: var(--accent-2); }
-.toolbar { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line-2); margin-bottom: 14px; }
+.toolbar { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line-2); margin-bottom: 14px; }
 .tool { background: none; border: 0; padding: 9px 4px; cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
 .tool + .tool { border-left: 1px solid var(--line-2); }
 .tool:hover { color: var(--ink); }
@@ -588,3 +588,40 @@ svg.mol .hit-a.on polygon { stroke: var(--accent); fill: rgba(47, 134, 255, 0.3)
 @media (prefers-reduced-motion: reduce) {
   .ripple svg { animation: hexfade 0.3s ease-out forwards !important; }
 }
+
+/* 입체: 쐐기 · R/S · CIP 순위 */
+svg.mol .m-w { fill: var(--ink-2); stroke: none; }
+svg.mol .m-w.pri { fill: var(--accent-2); }
+svg.mol .m-w.hl { fill: var(--ok); }
+svg.mol .m-h { stroke: var(--ink-2); stroke-width: 1.4; stroke-linecap: round; }
+svg.mol .m-h.pri { stroke: var(--accent-2); }
+svg.mol .m-h.hl { stroke: var(--ok); }
+svg.mol .m-rs { fill: var(--warn); font-size: 13px; font-weight: 500; font-family: var(--body); }
+svg.mol .m-rs.on { fill: #fff; }
+svg.mol .m-cip circle { fill: var(--bg); stroke: var(--warn); stroke-width: 1.2; }
+svg.mol .m-cip text { fill: var(--warn); font-size: 11px; font-weight: 500; font-family: var(--body); }
+svg.mol .m-cip.r1 circle { fill: var(--warn); } svg.mol .m-cip.r1 text { fill: var(--bg); }
+svg.mol .m-mark { fill: rgba(255, 197, 107, 0.16); stroke: var(--warn); stroke-width: 1.2; stroke-dasharray: 3 3; }
+svg.mol.tool-rs .hit-a:hover polygon, svg.mol.tool-rs .hit-a:focus-visible polygon { fill: rgba(255, 197, 107, 0.22); stroke: var(--warn); }
+svg.mol.tool-rs .hit-b { pointer-events: none; }
+.rs-card { padding: 16px 18px; }
+.rs-rule { margin: 0 0 12px; font-size: 12.5px; color: var(--ink-2); }
+.rs-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.rs-tabs button { background: none; border: 1px solid var(--line-2); color: var(--ink-2); padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: var(--mono); }
+.rs-tabs button[aria-selected="true"] { border-color: var(--warn); color: var(--warn); }
+.rs-head { margin: 0 0 8px; font-family: var(--mono); font-size: 14px; }
+.rs-big { color: var(--warn); font-size: 20px; }
+.cip-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cip-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; align-items: baseline; font-size: 13.5px; color: var(--ink); }
+.cip-list small { grid-column: 2; font-size: 11.5px; color: var(--muted); }
+.cipn { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--warn); color: var(--warn); font-size: 11px; font-weight: 500; }
+.cipn.r1 { background: var(--warn); color: var(--bg); }
+.rs-how { margin: 10px 0 0; padding: 8px 10px; font-size: 13px; color: var(--ink-2); border-left: 2px solid var(--warn); background: rgba(255, 197, 107, 0.06); }
+.rs-mirror { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.rs-card .note { margin-top: 10px; }
+.rx-prod figcaption em.st { color: var(--warn); letter-spacing: 0.02em; font-size: 11px; }
+.q-opt.rs { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; min-height: 64px; }
+.q-opt.rs b { font-family: var(--display); font-size: 28px; font-weight: 500; color: var(--warn); }
+.q-opt.rs small { font-family: var(--body); font-size: 12px; color: var(--muted); }
+.q-feedback .rs-card { padding: 14px 16px; }
+svg.mol .m-cip text.h { fill: var(--warn); font-size: 11px; font-family: var(--mono); }

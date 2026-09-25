@@ -60,6 +60,35 @@ with sync_playwright() as pw:
     p.click('.seg.small [data-mode="skeletal"]'); time.sleep(0.4)
     p.screenshot(path=str(OUT / 'act_build_skel.png'))
     p.click('.seg.small [data-mode="atoms"]'); time.sleep(0.2)
+    # 빠르게 여러 분자 고르기: 50ms 넘는 긴 작업이 몇 번인지
+    p.evaluate("window.__lt = []; new PerformanceObserver(l => l.getEntries().forEach(e => window.__lt.push(Math.round(e.duration)))).observe({ type: 'longtask', buffered: false })")
+    ids = ['ibuprofen', 'menthol', 'capsaicin', 'citric', 'tnt', 'aspirin', 'carvone', 'dopamine', 'geraniol', 'vanillin']
+    for t in ids: p.click(f'.fam-list [data-t="{t}"]'); time.sleep(0.07)
+    time.sleep(1.5)
+    print('rapid 10 clicks → long tasks (ms):', p.evaluate('window.__lt'))
+    # R/S: 뷰테인 C2 에 OH → 입체중심, R/S 도구로 뒤집기
+    p.click('.scaf[data-t="butane"]'); time.sleep(0.3)
+    p.click('.tool[data-tool="add"]'); p.click('.chip[data-g="OH"]'); p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
+    print('butan-2-ol:', name(), '| changes:', ch())
+    print('  wedge drawn:', p.evaluate("document.querySelectorAll('.svgwrap .m-w, .svgwrap .m-h').length"), '| R/S label:', p.evaluate("[...document.querySelectorAll('.svgwrap .m-rs')].map(t => t.textContent)"))
+    print('  rs card:', p.inner_text('.rs-card .rs-one').replace('\n', ' / ')[:260] if p.query_selector('.rs-card .rs-one') else 'NONE')
+    p.click('.tool[data-tool="rs"]'); time.sleep(0.3)
+    p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
+    print('flip R/S:', name(), '| changes:', ch())
+    print('  cip markers:', p.evaluate("document.querySelectorAll('.svgwrap .m-cip').length"))
+    p.screenshot(path=str(OUT / 'act_rs.png'))
+    p.click('.svgwrap [data-atom="0"]'); time.sleep(0.3); print('  not a center →', p.inner_text('.pal-info')[:60])
+    # 메소: 뷰테인-2,3-다이올
+    p.click('.tool[data-tool="add"]'); p.click('.chip[data-g="OH"]'); p.click('.svgwrap [data-atom="2"]'); time.sleep(0.4)
+    print('diol:', name(), '| mirror/meso:', p.inner_text('.rs-card').split('\n')[-1][:90])
+    if p.query_selector('#b-mirror'): p.click('#b-mirror'); time.sleep(0.3); print('  mirror →', name())
+    p.click('.tool[data-tool="rs"]'); p.click('.svgwrap [data-atom="1"]'); time.sleep(0.4)
+    print('  flip C2:', name(), '|', 'meso' if '메소' in p.inner_text('.rs-card') else 'chiral')
+    p.screenshot(path=str(OUT / 'act_rs2.png'), full_page=True)
+    p.click('.tool[data-tool="add"]')
+    # 유명한 분자의 R/S
+    for t in ['menthol', 'alanine', 'carvone', 'limonene']:
+        p.click(f'.fam-list [data-t="{t}"]'); time.sleep(0.4); print(f'{t}:', name(), '|', p.inner_text('.name-common') if p.query_selector('.name-common') else '')
     # 무작위
     for k in range(3): p.click('#b-rand'); time.sleep(0.3); print('rand:', name())
     # 언어
@@ -85,7 +114,7 @@ with sync_playwright() as pw:
     p.click('#b-react'); time.sleep(1.5)
     print('react route:', p.evaluate('location.hash'), '| sub:', p.inner_text('.rx-subname').replace('\n', ' / '))
     p.click('.rx-cats [data-cat="sn"]'); time.sleep(0.2)
-    p.click('.ex-chips [data-smi="CCC(C)Br"]'); time.sleep(0.3)
+    p.evaluate("[...document.querySelectorAll('.ex-chips [data-smi]')][0].click()"); time.sleep(0.3)
     rids = p.evaluate("[...document.querySelectorAll('.rx-btn')].map(b => b.dataset.rid + (b.classList.contains('dim') ? '(dim)' : ''))")
     print('sn reagents:', rids)
     p.query_selector('.rx-btn:not(.dim)').click(); time.sleep(0.6)
@@ -106,12 +135,23 @@ with sync_playwright() as pw:
     p.click('[data-cat="cc"]'); p.evaluate("[...document.querySelectorAll('.ex-chips [data-smi]')].find(b => b.dataset.smi === 'C=CCCCC=C').click()")
     p.evaluate("document.querySelector('.rx-btn[data-rid=\"grubbs\"]').click()"); time.sleep(0.5)
     print('RCM:', p.inner_text('.rx-scheme').replace('\n', ' / ')[:200])
+    # 반응의 입체: SN2 반전, SN1 라세미, anti 첨가 → 메소
+    def rx(cat, smi, rid):
+        p.click(f'[data-cat="{cat}"]')
+        p.evaluate("s => [...document.querySelectorAll('.ex-chips [data-smi]')].find(b => b.dataset.smi === s).click()", smi)
+        p.evaluate("r => document.querySelector('.rx-btn[data-rid=\"' + r + '\"]').click()", rid); time.sleep(0.4)
+        caps = p.evaluate("[...document.querySelectorAll('.rx-prod.major figcaption')].map(f => f.innerText.replace(/\\n/g, ' / '))")
+        line = p.evaluate("(() => { const b = [...document.querySelectorAll('.changes li b')].find(x => x.textContent.startsWith('R/S')); return b ? b.textContent : '' })()")
+        print(f'  {smi} + {rid}:', caps, line)
+    rx('sn', 'C[C@@H](Br)CC', 'nai'); rx('sn', 'C[C@@H](Br)CC', 'h2o')
+    rx('ene', 'C/C=C/C', 'br2'); rx('ene', 'C/C=C\\C', 'br2'); rx('ene', 'CC1=CCCCC1', 'hydrobor')
+    p.screenshot(path=str(OUT / 'act_react_rs.png'), full_page=True)
     p.screenshot(path=str(OUT / 'act_react_rcm.png'), full_page=True)
     # 메뉴
     p.click('#menu-btn'); time.sleep(0.8); p.screenshot(path=str(OUT / 'act_menu.png'))
     p.click('.menu-list a[href="#quiz"]'); time.sleep(1.5)
     print('route:', p.evaluate('location.hash'), p.evaluate('document.getElementById("menu").hidden'))
-    for mode in ['name', 'struct', 'react']:
+    for mode in ['name', 'struct', 'react', 'rs']:
         p.click(f'.q-bar [data-mode="{mode}"]'); time.sleep(0.5)
         for k in range(3):
             opts = p.query_selector_all('.q-opt')

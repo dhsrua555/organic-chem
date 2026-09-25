@@ -2,7 +2,9 @@
    - 분자가 바뀌면 가로 줄무늬로 풀렸다가(색수차) 새 분자로 맺힌다
    - 마우스 가까운 원자는 바깥으로 들리며 빛나고 작은 이름표가 붙는다 (igloo.inc 의 블록 반응을 분자에 옮김)
    - 누르면 충격파로 원자가 튀었다 돌아오고 바닥에 육각 물결, 길게 누르면 분자가 벌어진다(분해도)
-   - 3D 보기: 끌어서 회전, 휠 · 두 손가락으로 확대 · 축소, 두 번 눌러 처음 모양 */
+   - 3D 보기: 끌어서 회전, 휠 · 두 손가락으로 확대 · 축소, 두 번 눌러 처음 모양
+   - 빠르게 여러 번 바꾸면 마지막 분자만 만들고, 사라지는 분자는 하나만 남겨 짧게 전환한다 (렉 방지).
+     가만히 있을 때는 색수차 세 겹 대신 한 겹만 그린다 */
 import * as THREE from './three.js';
 import { embed3d } from './chem/geom3d.js';
 import { rings } from './chem/core.js';
@@ -115,7 +117,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
   }
 
   function makeWire(mol, res, opts = {}) {
-    const g = embed3d(mol);
+    const g = embedCached(mol);
     const R = rings(mol);
     const pri = res ? res.principalAtoms || new Set() : new Set();
     const hl = opts.hl || new Set();
@@ -123,7 +125,7 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     const pos = [], col = [], rnd = [], owner = [];
     const push = (a, b, c, oa, ob) => { pos.push(a[0], a[1], a[2], b[0], b[1], b[2]); col.push(c.r, c.g, c.b, c.r, c.g, c.b); rnd.push(Math.random(), Math.random()); owner.push(oa, ob); };
     const colorOf = a => (a.heavy >= 0 && pri.has(a.heavy)) ? COL.pri : (a.heavy >= 0 && hl.has(a.heavy)) ? COL.hl : (a.el === 'C' || a.el === 'H') ? COL.wire : COL.hetero;
-    const ico = { 0: edgesOf(new THREE.IcosahedronGeometry(1, 0)), 1: edgesOf(new THREE.IcosahedronGeometry(1, 1)) };
+    const ico = icoEdges();
     const idx = [];
     g.atoms.forEach((a, i) => {
       if (a.el === 'H' && !showH) return;
@@ -180,10 +182,11 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       group.add(ls);
       return m;
     });
-    const sprites = [];
+    const sprites = [], mats = new Map();
+    const matFor = (el, hot) => { const k = el + (hot ? '*' : ''); if (!mats.has(k)) mats.set(k, letterMat(el, hot)); return mats.get(k); };
     g.atoms.forEach((a, i) => {
       if (a.el === 'C' || a.el === 'H') return;
-      const sp = new THREE.Sprite(letterMat(a.el, a.heavy >= 0 && pri.has(a.heavy)));
+      const sp = new THREE.Sprite(matFor(a.el, a.heavy >= 0 && pri.has(a.heavy)));
       sp.position.set(a.p[0], a.p[1], a.p[2]);
       sp.scale.set(0.42, 0.42, 1);
       sp.renderOrder = 2;
@@ -198,16 +201,44 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     return { group, passes, sprites, disp, phys, radius: radius + 0.6, t: 1, target: 0, speed: 1, mol, res };
   }
 
+  /* 분자 바꾸기: 바로 만들지 않고 다음 틈에 (연달아 바뀌면 마지막 것만) */
+  let pending = null, pendTimer = 0, lastChange = -1e9, burstCount = 0;
   function setMolecule(mol, res, opts = {}) {
-    for (const w of state.live) { w.target = 1; w.speed = 1.6; }
+    state.last = { mol, res, opts };
+    pending = state.last;
+    const now = performance.now();
+    const gap = now - lastChange;
+    lastChange = now;
+    burstCount = gap < 700 ? burstCount + 1 : 0;
+    clearTimeout(pendTimer);
+    if (opts.instant || !current) { flush(false); return; }
+    /* 빠르게 연달아 누르면 잠깐 기다렸다가 마지막 분자만 */
+    pendTimer = setTimeout(() => flush(burstCount > 0), burstCount > 0 ? 120 : 0);
+  }
+  function flush(rapid) {
+    if (!pending) return;
+    const { mol, res, opts } = pending;
+    pending = null;
     let w;
     try { w = makeWire(mol, res, opts); } catch (e) { console.warn(e); return; }
-    w.t = opts.instant || reduce ? 0 : 1; w.target = 0; w.delay = opts.instant || reduce || !state.live.length ? 0 : 0.28; w.speed = 1.15;
+    const quick = rapid || !state.motion;
+    /* 이미 사라지는 중인 분자는 바로 치우고, 지금 분자 하나만 풀려 사라지게 */
+    state.live = state.live.filter(o => {
+      if (o.target === 1 || quick && o !== current) { dispose(o); return false; }
+      return true;
+    });
+    for (const o of state.live) { o.target = 1; o.speed = quick ? 3.2 : 1.6; }
+    const inst = opts.instant || reduce;
+    w.t = inst ? 0 : quick ? 0.6 : 1; w.target = 0; w.delay = inst || quick || !state.live.length ? 0 : 0.28; w.speed = quick ? 2.4 : 1.15;
     state.live.push(w);
     spin.add(w.group);
     state.fit = 4.3 / Math.max(3.2, w.radius);
     current = w;
-    state.last = { mol, res, opts };
+  }
+  /* 버퍼만 비운다. 재질(셰이더)은 모든 분자가 같은 프로그램을 쓰므로 지우지 않는다 — 지우면 다음 분자에서 셰이더를 다시 컴파일해 멈칫한다 */
+  function dispose(w) {
+    spin.remove(w.group);
+    w.group.traverse(o => { if (o.geometry && !o.isSprite) o.geometry.dispose(); });
   }
   function setAnchor(a) { Object.assign(state.anchor, a); }
   function setMotion(on) { state.motion = on && !reduce; }
@@ -359,8 +390,15 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       if (w.delay > 0) w.delay -= dt;
       else w.t += Math.sign(w.target - w.t) * Math.min(Math.abs(w.target - w.t), dt * w.speed);
       for (const m of w.passes) { m.uniforms.uT.value = w.t; m.uniforms.uAlpha.value = c.dim; }
+      /* 다 맺힌 뒤에는 세 겹(빨 · 초 · 파)이 한자리에 겹치므로 한 겹을 흰색으로 */
+      const still = w.t < 1e-3;
+      if (still !== w.still) {
+        w.still = still;
+        w.passes[0].uniforms.uMask.value.set(1, still ? 1 : 0, still ? 1 : 0);
+        w.group.children.forEach((ch, i) => { if (ch.isLineSegments && i > 0) ch.visible = !still; });
+      }
       w.group.children.forEach(ch => { if (ch.isSprite) ch.material.opacity = Math.pow(1 - w.t, 3) * c.dim; });
-      if (w.target === 1 && w.t >= 1) { spin.remove(w.group); w.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); return false; }
+      if (w.target === 1 && w.t >= 1) { dispose(w); return false; }
       return true;
     });
     physics(dt, now);
@@ -467,6 +505,21 @@ function letterMat(el, hot) {
     letterCache[k] = new THREE.CanvasTexture(c);
   }
   return new THREE.SpriteMaterial({ map: letterCache[k], transparent: true, depthWrite: false, depthTest: false });
+}
+let ICO = null;
+function icoEdges() {
+  if (!ICO) ICO = { 0: edgesOf(new THREE.IcosahedronGeometry(1, 0)), 1: edgesOf(new THREE.IcosahedronGeometry(1, 1)) };
+  return ICO;
+}
+/* 같은 분자(되돌리기 · 다시 고르기)는 3D 좌표를 다시 계산하지 않는다 */
+const EMBED = new Map();
+function embedCached(mol) {
+  const k = JSON.stringify([mol.atoms.map(a => [a.el, a.h, a.q || 0, a.chi ? a.chi.n.join('.') + ':' + a.chi.s : 0, Math.round(a.x * 4), Math.round(a.y * 4)]), mol.bonds.map(b => [b.a, b.b, b.o])]);
+  if (EMBED.has(k)) { const v = EMBED.get(k); EMBED.delete(k); EMBED.set(k, v); return v; }
+  const g = embed3d(mol);
+  EMBED.set(k, g);
+  if (EMBED.size > 40) EMBED.delete(EMBED.keys().next().value);
+  return g;
 }
 function edgesOf(geo) { const e = new THREE.EdgesGeometry(geo, 1); return Array.from(e.attributes.position.array); }
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

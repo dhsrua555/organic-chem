@@ -106,6 +106,7 @@ const TABLE = {
   '(E)-N-[(4-hydroxy-3-methoxyphenyl)methyl]-8-methylnon-6-enamide': ['capsaicin', '캡사이신', '고추의 매운맛'],
   '(E)-3,7-dimethylocta-2,6-dien-1-ol': ['geraniol', '제라니올', '장미 향'],
   '1-methyl-4-(prop-1-en-2-yl)cyclohex-1-ene': ['limonene', '리모넨', '귤 껍질 향'],
+  '2-methyl-5-(prop-1-en-2-yl)cyclohex-2-en-1-one': ['carvone', '카본', '거울상끼리 향이 다름: (R) 스피어민트 · (S) 캐러웨이'],
   '5-methyl-2-(propan-2-yl)cyclohexan-1-ol': ['menthol', '멘톨', '박하의 시원한 느낌'],
   '4-(2-aminoethyl)benzene-1,2-diol': ['dopamine', '도파민', '신경전달물질'],
   'ethyl 4-aminobenzoate': ['benzocaine', '벤조카인', '국소 마취제'],
@@ -138,9 +139,18 @@ const OMP = { 2: 'o', 3: 'm', 4: 'p' };
 const BASE = { phenol: '페놀', aniline: '아닐린', 'benzoic acid': '벤조산', benzaldehyde: '벤즈알데하이드', benzonitrile: '벤조나이트릴', benzamide: '벤즈아마이드' };
 
 /* res: nameMolecule 결과. 반환 { en, ko, note, omp } 또는 null */
+/* 입체 표시 (2R,3E) 를 뺀 이름으로 찾고, 찾으면 앞에 R/S 를 붙여 준다 (아미노산은 L/D 도) */
+const STEREO_RE = /\((?:\d*′*[EZRS],?)+\)-/g;
+const LD = { alanine: { S: 'L', R: 'D' }, 'lactic acid': { S: 'L', R: 'D' } };
 export function commonName(res) {
-  const t = TABLE[res.nameEn];
-  if (t) return { en: t[0], ko: t[1], note: t[2] || '' };
+  const bare = res.nameEn.replace(STEREO_RE, '');
+  const t = TABLE[res.nameEn] || TABLE[bare];
+  if (t) {
+    const rs = res.rs && res.rs.size ? [...res.rs.values()] : [];
+    const st = res.nameEn !== bare && res.stereo && /[RS]/.test(res.stereo) ? `(${res.stereo})-` : '';
+    const ld = rs.length === 1 && LD[t[0]] ? LD[t[0]][rs[0]] + '-' : '';
+    return { en: (ld || st) + t[0], ko: (ld || st) + t[1], note: t[2] || '' };
+  }
   if (res.kind === 'benzene') return ompName(res);
   return null;
 }

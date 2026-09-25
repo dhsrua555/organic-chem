@@ -4,7 +4,7 @@ import { layout } from './layout.js';
 import { nameMolecule } from './name.js';
 import {
   work, graft, setBond, cut, finish, carbonNbrs, classOf, cationScore, shiftFor, applyShift, alkeneDegree, scan, product, none, rolesByKey,
-  NUCS, substitute, eliminate, betas
+  NUCS, substitute, eliminate, betas, faceStereo, settleFaces
 } from './react.js';
 
 const CLS = ['메틸', '1차', '2차', '3차', '4차'];
@@ -259,16 +259,21 @@ function addAlkene(kind) {
       ];
     } else {
       const m = work(mol);
+      const n0 = mol.atoms.length;
+      let faced = false;
       for (const { a, b: bb } of sites) {
         const ord = moreSub(mol, a, bb) || [a, bb];
         const [hi, lo] = spec.anti ? [ord[1], ord[0]] : ord;
         setBond(m, a, bb, spec.cleave ? 0 : 1);
         if (spec.cleave) { cut(m, a, bb); graft(m, a, 'O', 2, false); graft(m, bb, 'O', 2, false); continue; }
-        if (spec.epoxide) { const o = graft(m, a, 'O', 1, false); addBond(m, bb, o, 1); m.atoms[o].h = 0; continue; }
-        for (const [atom, f] of [[hi, spec.hi], [lo, spec.lo]]) { if (f === 'H') m.atoms[atom].h += 1; else graft(m, atom, f, 1, false); }
+        if (spec.epoxide) { const o = graft(m, a, 'O', 1, false); addBond(m, bb, o, 1); m.atoms[o].h = 0; faceStereo(mol, m, a, bb, { [a]: 1, [bb]: 1 }, new Set(), n0); faced = true; continue; }
+        const addedH = new Set();
+        for (const [atom, f] of [[hi, spec.hi], [lo, spec.lo]]) { if (f === 'H') { m.atoms[atom].h += 1; addedH.add(atom); } else graft(m, atom, f, 1, false); }
+        /* 한 번에 같은 면(syn) 또는 반대 면(anti)으로 붙는 반응만 배열이 정해진다 */
+        if (spec.face) { faceStereo(mol, m, hi, lo, { [hi]: 1, [lo]: spec.face === 'anti' ? -1 : 1 }, addedH, n0); faced = true; }
       }
       const prods = finish(m);
-      prods.forEach((p, i) => res.products.push(product(p, 'major', { tag: spec.tag })));
+      prods.forEach(p => res.products.push(product(p, 'major', { tag: spec.tag, rac: faced && settleFaces(p) })));
       res.steps = spec.steps;
       if (!one) res.select.push(`이중결합이 ${sites.length}개 — 시약을 넉넉히 넣어 모두 반응한 결과입니다.`);
     }
@@ -283,13 +288,13 @@ const SPEC = {
   H2O: { cation: true, nuc: 'O', mech: '산 촉매 수화 (마르코브니코프)', nucStep: '물 결합 → H⁺ 이탈', nucText: '물이 양이온에 붙고 H⁺ 를 잃어 알코올이 됩니다 (H⁺ 는 촉매로 되돌아감).', select: ['위치: OH 는 치환이 많은 탄소에.', '양이온을 거치므로 자리옮김이 일어날 수 있습니다.'] },
   HBrROOR: { hi: 'H', lo: 'Br', anti: false, mech: '라디칼 첨가 (반마르코브니코프)', tag: '라디칼', steps: [{ t: '개시', d: '과산화물 RO–OR 이 빛 · 열로 끊겨 RO· 가 생기고, HBr 에서 H 를 떼어 Br· 를 만듭니다.' }, { t: 'Br· 첨가', d: `Br· 가 ${b('H 가 더 많은 탄소')}에 붙어 더 안정한(치환 많은) 탄소 라디칼이 생깁니다.` }, { t: 'H 떼기', d: '탄소 라디칼이 HBr 의 H 를 떼어 생성물 + Br· (연쇄 반응).' }], select: ['위치: Br 은 치환이 적은 탄소에 (반마르코브니코프). HBr 만 이렇게 되고 HCl · HI 는 안 됩니다.'] },
   oxymerc: { hi: 'O', lo: 'H', mech: '옥시수은화–탈수은화 (마르코브니코프)', tag: '첨가', steps: [{ t: '수은 고리 이온', d: 'Hg(OAc)₂ 가 이중결합과 3원자 고리(머큐리늄) 이온을 만듭니다 — 자유 양이온이 아니라 자리옮김이 없습니다.' }, { t: '물의 공격', d: '물이 치환이 많은 탄소를 공격해 고리를 엽니다.' }, { t: '탈수은화', d: 'NaBH₄ 가 C–Hg 를 C–H 로 바꿉니다.' }], select: ['위치: 마르코브니코프, 자리옮김 없음.'], modern: [{ y: '현대', t: '수은은 독성이 커서 요즘은 거의 쓰지 않습니다. 코발트 촉매와 실레인 · 산소를 쓰는 무카이야마 수화처럼 수은 없이 마르코브니코프 알코올을 얻는 방법이 쓰입니다.' }] },
-  hydrobor: { hi: 'H', lo: 'O', mech: '수소붕소화–산화 (반마르코브니코프, syn)', tag: '첨가', steps: [{ t: '수소붕소화', d: 'B–H 가 이중결합에 한 번에(협동) 붙습니다. 부피 큰 B 는 치환이 적은 탄소에, H 는 많은 탄소에 — 같은 쪽(syn).' }, { t: '산화', d: 'H₂O₂ / NaOH 가 C–B 를 같은 자리의 C–OH 로 바꿉니다 (배열 유지).' }], select: ['위치: OH 는 치환이 적은 탄소에 (반마르코브니코프).', '입체: H 와 OH 가 같은 쪽 (syn 첨가). 자리옮김 없음.'], modern: [{ y: '현대', t: '9-BBN · 다이사이아밀보레인 같은 부피 큰 보레인은 위치 선택성을 더 높입니다. 키랄 보레인(Brown)으로 한쪽 거울상 알코올만 얻을 수도 있습니다.' }] },
-  Br2: { hi: 'Br', lo: 'Br', mech: '할로젠 첨가 (anti)', tag: '첨가', steps: [{ t: '브로모늄 이온', d: 'Br₂ 가 이중결합에 다가가 3원자 고리 브로모늄 이온을 만듭니다.' }, { t: '뒤쪽 공격', d: 'Br⁻ 가 고리의 반대쪽에서 공격 → 두 Br 은 서로 반대쪽 (anti).' }], select: ['입체: anti 첨가. 고리 알켄이면 trans-1,2-다이브로모 생성물.'] },
-  Cl2: { hi: 'Cl', lo: 'Cl', mech: '할로젠 첨가 (anti)', tag: '첨가', steps: [{ t: '클로로늄 이온', d: 'Cl₂ 가 3원자 고리 이온을 만듭니다.' }, { t: '뒤쪽 공격', d: 'Cl⁻ 가 반대쪽에서 공격 (anti).' }], select: ['입체: anti 첨가.'] },
-  halohydrin: { hi: 'O', lo: 'Br', mech: '할로하이드린 생성', tag: '첨가', steps: [{ t: '브로모늄 이온', d: '먼저 브로모늄 고리가 생깁니다.' }, { t: '물의 공격', d: '양이 훨씬 많은 물이 Br⁻ 대신, 양전하를 더 많이 가진 치환 많은 탄소를 뒤쪽에서 공격합니다.' }], select: ['위치: OH 는 치환 많은 탄소, Br 은 적은 탄소.', '입체: anti.'] },
-  H2: { hi: 'H', lo: 'H', mech: '촉매 수소화 (syn)', tag: '환원', steps: [{ t: '금속 표면', d: 'H₂ 와 알켄이 Pd 표면에 흡착합니다.' }, { t: 'H 두 개 전달', d: '같은 면에서 H 두 개가 차례로 붙습니다 (syn).' }], select: ['벤젠 고리 · C=O 는 이 조건에서 거의 환원되지 않습니다.'], modern: [{ y: '2001', t: '키랄 로듐 · 루테늄 촉매로 한쪽 거울상만 만드는 비대칭 수소화로 놀스 · 노요리가 노벨 화학상을 받았습니다 (L-DOPA 합성 등).' }] },
+  hydrobor: { face: 'syn', hi: 'H', lo: 'O', mech: '수소붕소화–산화 (반마르코브니코프, syn)', tag: '첨가', steps: [{ t: '수소붕소화', d: 'B–H 가 이중결합에 한 번에(협동) 붙습니다. 부피 큰 B 는 치환이 적은 탄소에, H 는 많은 탄소에 — 같은 쪽(syn).' }, { t: '산화', d: 'H₂O₂ / NaOH 가 C–B 를 같은 자리의 C–OH 로 바꿉니다 (배열 유지).' }], select: ['위치: OH 는 치환이 적은 탄소에 (반마르코브니코프).', '입체: H 와 OH 가 같은 쪽 (syn 첨가). 자리옮김 없음.'], modern: [{ y: '현대', t: '9-BBN · 다이사이아밀보레인 같은 부피 큰 보레인은 위치 선택성을 더 높입니다. 키랄 보레인(Brown)으로 한쪽 거울상 알코올만 얻을 수도 있습니다.' }] },
+  Br2: { face: 'anti', hi: 'Br', lo: 'Br', mech: '할로젠 첨가 (anti)', tag: '첨가', steps: [{ t: '브로모늄 이온', d: 'Br₂ 가 이중결합에 다가가 3원자 고리 브로모늄 이온을 만듭니다.' }, { t: '뒤쪽 공격', d: 'Br⁻ 가 고리의 반대쪽에서 공격 → 두 Br 은 서로 반대쪽 (anti).' }], select: ['입체: anti 첨가. 고리 알켄이면 trans-1,2-다이브로모 생성물.'] },
+  Cl2: { face: 'anti', hi: 'Cl', lo: 'Cl', mech: '할로젠 첨가 (anti)', tag: '첨가', steps: [{ t: '클로로늄 이온', d: 'Cl₂ 가 3원자 고리 이온을 만듭니다.' }, { t: '뒤쪽 공격', d: 'Cl⁻ 가 반대쪽에서 공격 (anti).' }], select: ['입체: anti 첨가.'] },
+  halohydrin: { face: 'anti', hi: 'O', lo: 'Br', mech: '할로하이드린 생성', tag: '첨가', steps: [{ t: '브로모늄 이온', d: '먼저 브로모늄 고리가 생깁니다.' }, { t: '물의 공격', d: '양이 훨씬 많은 물이 Br⁻ 대신, 양전하를 더 많이 가진 치환 많은 탄소를 뒤쪽에서 공격합니다.' }], select: ['위치: OH 는 치환 많은 탄소, Br 은 적은 탄소.', '입체: anti.'] },
+  H2: { face: 'syn', hi: 'H', lo: 'H', mech: '촉매 수소화 (syn)', tag: '환원', steps: [{ t: '금속 표면', d: 'H₂ 와 알켄이 Pd 표면에 흡착합니다.' }, { t: 'H 두 개 전달', d: '같은 면에서 H 두 개가 차례로 붙습니다 (syn).' }], select: ['벤젠 고리 · C=O 는 이 조건에서 거의 환원되지 않습니다.'], modern: [{ y: '2001', t: '키랄 로듐 · 루테늄 촉매로 한쪽 거울상만 만드는 비대칭 수소화로 놀스 · 노요리가 노벨 화학상을 받았습니다 (L-DOPA 합성 등).' }] },
   epox: { epoxide: true, mech: '에폭시화 (syn, 협동)', tag: '산화', steps: [{ t: '나비 모양 전이 상태', d: 'mCPBA 의 O 하나가 이중결합 양쪽 탄소에 한 번에 붙습니다.' }], select: ['입체: 알켄의 cis/trans 배치가 에폭사이드에 그대로 남습니다.'], modern: [{ y: '2001', t: '알릴 알코올을 한쪽 거울상 에폭사이드로 바꾸는 샤플리스 비대칭 에폭시화가 노벨상(2001)을 받았고, 제이콥슨 · 시(Shi) 에폭시화로 넓어졌습니다.' }] },
-  OsO4: { hi: 'O', lo: 'O', mech: '다이하이드록시화 (syn)', tag: '산화', steps: [{ t: '고리형 오스뮴산 에스터', d: 'OsO₄ 가 이중결합의 같은 면에 O 두 개로 붙습니다.' }, { t: '가수분해', d: '고리가 풀려 1,2-다이올 (두 OH 가 같은 쪽).' }], select: ['입체: syn. 고리 알켄이면 cis-다이올.'], modern: [{ y: '현대', t: 'OsO₄ 는 비싸고 독해서 소량 촉매로 쓰고 NMO 로 되살립니다 (업존 법). 샤플리스 비대칭 다이하이드록시화(AD-mix)도 널리 쓰입니다.' }] },
+  OsO4: { face: 'syn', hi: 'O', lo: 'O', mech: '다이하이드록시화 (syn)', tag: '산화', steps: [{ t: '고리형 오스뮴산 에스터', d: 'OsO₄ 가 이중결합의 같은 면에 O 두 개로 붙습니다.' }, { t: '가수분해', d: '고리가 풀려 1,2-다이올 (두 OH 가 같은 쪽).' }], select: ['입체: syn. 고리 알켄이면 cis-다이올.'], modern: [{ y: '현대', t: 'OsO₄ 는 비싸고 독해서 소량 촉매로 쓰고 NMO 로 되살립니다 (업존 법). 샤플리스 비대칭 다이하이드록시화(AD-mix)도 널리 쓰입니다.' }] },
   ozone: { cleave: true, mech: '오존 분해', tag: '절단', steps: [{ t: '1차 오조나이드', d: 'O₃ 가 이중결합에 붙어 불안정한 고리가 생깁니다.' }, { t: '크리기 중간체', d: '고리가 쪼개졌다가 다시 붙어 오조나이드가 됩니다.' }, { t: '환원 처리', d: '(CH₃)₂S 가 오조나이드를 두 개의 C=O 로 바꿉니다.' }], select: ['C=C 가 끊어져 양쪽이 각각 C=O. H 가 있던 탄소 → 알데하이드, 없던 탄소 → 케톤.'], modern: [{ y: '2012', t: '크리기 중간체(카보닐 옥사이드)를 기체 상태에서 직접 만들어 측정하는 데 성공했고, 대기 중 SO₂ 산화 등 대기 화학에서 생각보다 중요하다는 것이 밝혀졌습니다 (Welz 외, Science 2012).' }] }
 };
 
@@ -951,7 +956,26 @@ export function predict(mol, id) {
   const rank = { major: 0, minor: 1, side: 2 };
   out.sort((a, b2) => (rank[a.role] - rank[b2.role]) || ((b2.pct || 0) - (a.pct || 0)));
   res.products = out;
+  stereoNotes(mol, res);
   return res;
+}
+/* 생성물의 입체: 라세미 · 메소 · 부분입체 혼합, 기질 R/S → 생성물 R/S */
+function stereoNotes(mol, res) {
+  let sub = null;
+  try { sub = nameMolecule(mol, { noNotes: true }); } catch { sub = null; }
+  for (const p of res.products) {
+    const n = p.name;
+    if (!n || !n.centers || !n.centers.length) continue;
+    const def = n.rs ? n.rs.size : 0, undef = n.undef ? n.undef.length : 0;
+    if (p.rac && def && !undef) {
+      if (n.meso) p.stereoTag = '메소 (거울면이 있어 광학 비활성)';
+      else if (n.mirror) { p.stereoTag = '(±) 라세미 — 거울상과 1:1'; p.mirrorName = n.mirror; }
+    } else if (undef && !def) p.stereoTag = undef === 1 ? '* 라세미 — R 과 S 가 1:1' : '* R · S 가 섞인 혼합물';
+    else if (undef && def) p.stereoTag = '* 새 입체중심은 두 배열이 섞임 (부분입체이성질체 혼합물)';
+    if (p.role === 'major' && sub && sub.rs && sub.rs.size && def && sub.stereo && n.stereo && !p.stereoLine) {
+      res.stereoLine = `기질 ${sub.nameEn.match(/^\([^)]*\)/) ? sub.nameEn.match(/^\([^)]*\)/)[0] : '(' + sub.stereo + ')'} → 주생성물 (${n.stereo})`;
+    }
+  }
 }
 /* 이 기질에 쓸 수 있는 반응인가 (메뉴에서 흐리게 표시) */
 export function applicable(mol, S = scan(mol)) {

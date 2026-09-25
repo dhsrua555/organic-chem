@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>R/S 빠른 확인</title>
+<pre id="out"></pre>
+<script type="module">
+import { parseSmiles, toSmiles } from '../js/chem/core.js';
+import { layout } from '../js/chem/layout.js';
+import { nameMolecule } from '../js/chem/name.js';
+const q = new URLSearchParams(location.search);
+const list = (q.get('s') || '').split(' ').filter(Boolean);
+const L = [];
+for (const s of list) {
+  try { const m = parseSmiles(s); layout(m); const r = nameMolecule(m); L.push(s + '\t' + r.nameEn + '\t' + r.nameKo + '\t' + (r.meso ? 'meso' : r.mirror ? 'mirror=' + r.mirror.en : '')); }
+  catch (e) { L.push(s + '\tERR ' + e.message + ' ' + e.stack.split('\n')[1]); }
+}
+document.getElementById('out').textContent = L.join('\n');
+window.__done = true;
+</script>

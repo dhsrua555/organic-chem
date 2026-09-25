@@ -18,7 +18,9 @@ export function mount(root, app) {
     const ex0 = draw(EX, { chain: false, locants: false });
     const exChain = draw(EX, { locants: false });
     const pre = draw('CC(Br)CCl');
-    const Z = draw('OC(=O)/C=C\C(=O)O', { locants: false, chain: false }), E = draw('OC(=O)/C=C/C(=O)O', { locants: false, chain: false });
+    const Z = draw('OC(=O)/C=C\\C(=O)O', { locants: false, chain: false }), E = draw('OC(=O)/C=C/C(=O)O', { locants: false, chain: false });
+    /* R/S: 뷰탄-2-올 두 거울상, 중심 탄소에 CIP 순위 표시 */
+    const rsPair = ['C[C@@H](O)CC', 'C[C@H](O)CC'].map(sm => { const m = molecule(sm); const c = [...m.res.rs.keys()][0]; return { m, svg: drawMolecule(m.mol, m.res, { mode: store.get('drawMode', 'atoms'), locants: false, chain: false, cip: c }) }; });
     const benz = ['Oc1ccccc1', 'Nc1ccccc1', 'OC(=O)c1ccccc1', 'O=Cc1ccccc1', 'N#Cc1ccccc1', 'NC(=O)c1ccccc1', 'COC(=O)c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', 'CC(=O)c1ccccc1'].map(sm => ({ sm, ...draw(sm, { locants: false }) }));
     const omp = [['Oc1ccccc1Cl', 'ortho'], ['Oc1cccc(Cl)c1', 'meta'], ['Oc1ccc(Cl)cc1', 'para']].map(([sm, w]) => ({ w, ...draw(sm) }));
     const len = draw('C=C(CC)C(C)=O');
@@ -44,9 +46,13 @@ export function mount(root, app) {
         ${step(4, 'PREFIXES', '접두사 붙이기', `<p>접두사는 <b>알파벳 순서</b>로 늘어놓고 각각 번호를 붙입니다.</p>
           <ul><li>같은 치환기가 여럿이면 di · tri · tetra (다이 · 트라이 · 테트라) — 알파벳 순서를 따질 때는 무시</li><li>치환기 안에 또 치환기가 있으면 괄호: 2-(hydroxymethyl)</li><li>번호와 글자 사이는 하이픈, 번호끼리는 쉼표</li></ul>
           <p>오른쪽: <b>b</b>romo 가 <b>c</b>hloro 보다 앞. 번호 묶음 {1,2} 는 어느 쪽에서 세어도 같아 <code>2-bromo-1-chloropropane</code>.</p>`, pre)}
-        ${step(5, 'STEREO', '입체 표시', `<p>이중결합은 돌지 않아서 치환기 배치가 고정됩니다. 양 끝에서 원자번호가 큰(CIP 우선순위가 높은) 치환기끼리</p>
-          <ul><li>같은 쪽이면 <b>Z</b> (zusammen, 함께)</li><li>반대쪽이면 <b>E</b> (entgegen, 반대)</li><li>치환기 넷이 모두 다른 탄소(입체중심)는 R/S 로 구별 — 이 앱은 표시만 하고 R/S 는 정하지 않습니다</li></ul>
-          <p>이름 맨 앞에 <code>(Z)-</code> · <code>(E)-</code> 를 붙입니다.</p>`, null, `<div class="pairs">${[Z, E].map(x => `<div class="pair panel">${x.svg}<p class="pn">${nm(x.m)}</p><p>${nm2(x.m)} · ${esc(x.m.common ? x.m.common.ko : '')}</p></div>`).join('')}</div>`)}
+        ${step(5, 'STEREO', '입체 표시 (E/Z · R/S)', `<p><b>E/Z</b> — 이중결합은 돌지 않아서 치환기 배치가 고정됩니다. 양 끝에서 CIP 우선순위가 높은 치환기끼리</p>
+          <ul><li>같은 쪽이면 <b>Z</b> (zusammen, 함께), 반대쪽이면 <b>E</b> (entgegen, 반대)</li></ul>
+          <p><b>R/S</b> — 치환기 넷이 모두 다른 탄소(입체중심)는 거울상 두 가지가 있습니다.</p>
+          <ul><li>CIP 순위: 붙은 원자의 원자번호가 큰 것이 ① (O > N > C > H). 같으면 그다음 원자들을 큰 것부터 비교, 이중결합의 원자는 두 번 셉니다</li>
+          <li>가장 낮은 ④ (보통 H) 를 뒤로 보내고 ① → ② → ③ 이 시계 방향이면 <b>R</b>, 반대면 <b>S</b></li>
+          <li>그림에서 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합. H 가 앞으로 나와 있으면 보이는 방향을 거꾸로 읽습니다</li></ul>
+          <p>이름 맨 앞에 번호 순서대로 한 괄호에: <code>(2R,3E)-pent-3-en-2-ol</code>. 입체 단위가 하나뿐이면 번호를 생략해 <code>(R)-butan-2-ol</code>. 분자 조립의 ‘R/S’ 도구로 배열을 뒤집어 볼 수 있습니다.</p>`, null, `<div class="pairs">${[Z, E, ...rsPair].map(x => `<div class="pair panel">${x.svg}<p class="pn">${nm(x.m)}</p><p>${nm2(x.m)}${x.m.common ? ' · ' + esc(x.m.common.ko) : ''}</p></div>`).join('')}</div>`)}
       </div>
 
       <div class="sec-h"><h2>Priority</h2><p>접미사 우선순위 한눈에</p></div>

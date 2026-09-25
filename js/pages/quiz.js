@@ -1,9 +1,11 @@
-/* 퀴즈: 구조 → 이름 / 이름 → 구조 / 반응 → 주생성물.
+/* 퀴즈: 구조 → 이름 / 이름 → 구조 / 반응 → 주생성물 / R · S 판정.
    오답 보기는 조각 자리를 옮기거나 바꾼 "진짜 다른 분자", 반응에서는 다른 시약 · 다른 방향의 생성물 */
 import { TEMPLATES, fromSmiles, attach } from '../chem/edit.js';
 import { steps } from '../chem/explain.js';
 import { REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { drawMolecule } from '../draw.js';
+import { defineMissing, flipCenter, stereoInfo } from '../chem/stereo.js';
+import { centerHTML } from '../rsview.js';
 import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
 
 const UNSTABLE = ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
@@ -12,6 +14,31 @@ const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const RX_SUBS = ['CCC(C)Br', 'CC(C)(C)Br', 'CCCBr', 'CC(C)C(C)Br', 'BrCc1ccccc1', 'CC(O)CC', 'CCCO', 'CC(C)(C)O', 'OC1CCCCC1', 'CC=C', 'CC(C)=CC', 'C1=CCCCC1', 'CC(C)(C)C=C',
   'CCC#C', 'CC#CC', 'CCC=O', 'CC(=O)c1ccccc1', 'O=C1CCCCC1', 'CCOC(C)=O', 'CCC#N', 'CC(=O)O', 'CC(=O)Cl', 'c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', '[O-][N+](=O)c1ccccc1', 'CCC', 'CC(C)C', 'CC=O', 'C=CC=C', 'Brc1ccccc1'];
 
+/* R/S 문제용: 입체중심이 하나인 쉬운 분자들 (배열은 문제마다 무작위로 뒤집는다) */
+const RS_EASY = ['C[C@@H](O)CC', 'C[C@H](Br)CC', 'C[C@H](N)C(=O)O', 'C[C@@H](O)C(=O)O', 'O[C@@H](c1ccccc1)C', 'CC[C@@H](C)CO', 'C[C@H](Cl)C=C', 'ClC[C@@H](O)C',
+  'C[C@@H](C#N)CC', 'OC[C@H](O)C=O', 'CC(C)[C@@H](C)Br', 'C[C@@H]1CCCCC1=O', 'CC[C@H](C)C(=O)O', 'C[C@@H](F)CCl', 'CC[C@@H](O)C=C', 'N[C@@H](Cc1ccccc1)C(=O)O', 'C[C@H](OC)CC=O', 'CC(=O)[C@@H](C)CC'];
+function randomRS(level) {
+  for (let t = 0; t < 400; t++) {
+    let m;
+    if (level === 'easy') m = fromSmiles(pick(RS_EASY));
+    else {
+      m = fromSmiles(pick(BASES).smi);
+      const k = 2 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < k; j++) {
+        const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0 && m.atoms[i].el === 'C');
+        const r = attach(m, pick(at), pick(POOL)); if (r.mol) m = r.mol;
+      }
+      if (!stereoInfo(m).centers.length) continue;
+    }
+    m = defineMissing(m);
+    for (const c of stereoInfo(m).centers) if (Math.random() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
+    const e = entry(m);
+    if (!e.res || !e.res.rs || !e.res.rs.size || (level !== 'easy' && !ok(e))) continue;
+    const c = pick([...e.res.rs.keys()]);
+    return { rs: true, e, center: c, answer: e.res.rs.get(c) };
+  }
+  return null;
+}
 function ok(e) { return e.res && !(e.res.notes || []).some(n => UNSTABLE.includes(n.type)) && !e.res.alt1993 && e.res.nameEn.length <= 48; }
 function replay(base, recipe) {
   let m = fromSmiles(base);
@@ -86,7 +113,7 @@ export function mount(root, app, params) {
     <p class="eyebrow"><span class="bar"></span>05 — QUIZ</p>
     <h1 class="title">QUIZ<small>이름 · 반응 퀴즈</small></h1>
     <div class="q-bar">
-      <div class="seg" role="group" aria-label="문제 방식"><button type="button" data-mode="name">구조 → 이름</button><button type="button" data-mode="struct">이름 → 구조</button><button type="button" data-mode="react">반응 예측</button></div>
+      <div class="seg" role="group" aria-label="문제 방식"><button type="button" data-mode="name">구조 → 이름</button><button type="button" data-mode="struct">이름 → 구조</button><button type="button" data-mode="react">반응 예측</button><button type="button" data-mode="rs">R / S</button></div>
       <div class="seg" role="group" aria-label="난이도"><button type="button" data-level="easy">조각 1–2개</button><button type="button" data-level="hard">2–4개</button></div>
       <p class="score" aria-live="polite"></p>
     </div>
@@ -99,6 +126,8 @@ export function mount(root, app, params) {
     root.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     root.querySelectorAll('[data-level]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.level === S.level)); });
     root.querySelector('.seg[aria-label="난이도"]').hidden = S.mode === 'react';
+    const [le, lh] = root.querySelectorAll('[data-level]');
+    le.textContent = S.mode === 'rs' ? '입체중심 하나' : '조각 1–2개'; lh.textContent = S.mode === 'rs' ? '큰 분자' : '2–4개';
     const s = S.score;
     root.querySelector('.score').innerHTML = `<span>맞힘 <b>${s.right}</b> / ${s.total}</span><span>연속 <b>${s.streak}</b></span><span>최고 <b>${s.best}</b></span>`;
   }
@@ -107,7 +136,13 @@ export function mount(root, app, params) {
 
   function next() {
     S.done = false; S.chosen = null;
-    if (S.mode === 'react') {
+    if (S.mode === 'rs') {
+      const q = randomRS(S.level);
+      if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다. 다시 눌러 주세요.</p>'; return; }
+      S.q = q; S.opts = [{ k: 'R' }, { k: 'S' }];
+      q.correct = S.opts.find(o => o.k === q.answer);
+      app.setMol(q.e);
+    } else if (S.mode === 'react') {
       const q = randomReact();
       if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다. 다시 눌러 주세요.</p>'; return; }
       S.q = q; S.opts = q.opts;
@@ -121,7 +156,31 @@ export function mount(root, app, params) {
     }
     draw();
   }
+  function drawRS() {
+    const q = S.q, chosen = S.chosen, e = q.e;
+    const loc = e.res.locLabel && e.res.locLabel.get(q.center);
+    const pic = drawMolecule(e.mol, e.res, { mode: mode(), locants: S.done, chain: false, compact: true, mark: q.center, rsLabels: S.done, cip: S.done ? q.center : null });
+    const opts = S.opts.map((o, i) => {
+      const cls = !S.done ? '' : o === q.correct ? ' right' : o === chosen ? ' wrong' : '';
+      return `<button class="q-opt rs${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''}><span class="k">${i + 1}</span><b>${o.k}</b><small>${o.k === 'R' ? 'rectus · 시계 방향' : 'sinister · 시계 반대 방향'}</small></button>`;
+    }).join('');
+    let fb = '';
+    if (S.done) {
+      const right = chosen === q.correct;
+      fb = `<div class="q-feedback"><p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${loc ? 'C' + loc : '표시한 탄소'}는 <b>${q.answer}</b> · ${esc(e.res.nameEn)}</p>
+        <div class="rs-card panel">${centerHTML(e.mol, q.center, c => e.res.locLabel && e.res.locLabel.get(c))}</div>
+        <div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">분자 조립에서 열기</button></div></div>`;
+    }
+    card.innerHTML = `<p class="q-prompt">점선 원으로 표시한 탄소의 배열은? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.</p><div class="q-struct">${pic}</div><div class="q-opts">${opts}</div>` + fb;
+    card.querySelectorAll('.q-opt').forEach(b => b.addEventListener('click', () => answer(S.opts[+b.dataset.i])));
+    if (S.done) {
+      card.querySelector('#q-next').addEventListener('click', next);
+      card.querySelector('#q-open').addEventListener('click', () => app.go('build', { mol: e.mol }));
+      card.querySelector('#q-next').focus({ preventScroll: true });
+    }
+  }
   function draw() {
+    if (S.mode === 'rs') return drawRS();
     const q = S.q, keys = ['A', 'B', 'C', 'D'], chosen = S.chosen;
     let head;
     if (S.mode === 'react') head = `<p class="q-prompt">주생성물은?</p><div class="q-rx">${small(q.sub)}<div class="rx-arrow"><span class="rx-reagent">${q.res.reaction.label}</span><svg viewBox="0 0 120 16" aria-hidden="true"><path d="M2 8h112M104 2l10 6-10 6"/></svg></div><span class="q-what">?</span></div>`;

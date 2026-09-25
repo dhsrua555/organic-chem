@@ -1,8 +1,9 @@
 /* 반응 예측: 기질(분자 그래프) + 시약 → 생성물(주 · 부), 메커니즘, 선택성, 풀이 단계, 최신 관점.
    규칙은 스미스 유기화학의 핵심 반응 단원 흐름을 따르고, 2000년대 이후 달라진 이해와 방법을 덧붙였다.
    생성물은 이름 엔진으로 이름을 짓는다 (react-data.js 에 시약 목록과 설명 글). */
-import { clone, parseSmiles, addBond, setOrder, removeAtoms, bondBetween, rings, isBenzene, perceiveAromatic, components, subMol, HALOGENS } from './core.js';
+import { clone, parseSmiles, addBond, setOrder, removeAtoms, bondBetween, rings, isBenzene, perceiveAromatic, components, subMol, HALOGENS, chiralOK, cleanChi, orient4 } from './core.js';
 import { layout, stereoFromCoords, branch } from './layout.js';
+import { stereocenters } from './cip.js';
 import { analyze } from './name.js';
 
 /* ── 그래프 도구 ─────────────────────────────── */
@@ -62,9 +63,43 @@ export function finish(m, stereoExtra = []) {
     const cons = st.map(x => ({ ...x, x: map.get(x.x), a: map.get(x.a), b: map.get(x.b), y: map.get(x.y) }))
       .filter(x => [x.x, x.a, x.b, x.y].every(v => v !== undefined) && bondBetween(s, x.a, x.b) && bondBetween(s, x.a, x.b).o === 2);
     perceiveAromatic(s);
+    cleanChi(s);
     layout(s, { stereo: cons });
     return s;
   });
+}
+/* 알켄 첨가의 입체: 이중결합 a=b 의 면 위(+1) · 아래(−1)에서 새 원자가 붙었다고 보고 두 탄소의 배열(chi)을 정한다.
+   mol0: 반응 전 분자(좌표), m: 반응 뒤 그래프, faces: { [원자]: ±1 }, addedH: 이번에 H 를 받은 원자 Set, n0: 반응 전 원자 수.
+   결과는 한쪽 거울상 하나 — 실제로는 두 면에서 똑같이 일어나므로 라세미(또는 메소) */
+/* 첨가로 새 입체중심이 하나만 생기면 상대 배열이 없으므로 배열을 지운다 (그냥 라세미). 둘 이상이면 남긴다 */
+export function settleFaces(prod) {
+  const fc = stereocenters(prod).filter(i => prod.atoms[i].face);
+  prod.atoms.forEach((a, i) => { if (a.face) { if (fc.length < 2) delete a.chi; delete a.face; } });
+  return fc.length >= 2;
+}
+export function faceStereo(mol0, m, a, b, faces, addedH, n0) {
+  for (const [c, other] of [[a, b], [b, a]]) {
+    const A = mol0.atoms[c];
+    if (m.atoms[c].h > 1) continue;
+    const nbs = m.nb[c].filter(n => !(m.bonds[n.k] && m.bonds[n.k].dead) && !(m.atoms[n.j].dead)).map(n => n.j);
+    if (nbs.length + m.atoms[c].h !== 4 || m.nb[c].some(n => !(m.bonds[n.k] && m.bonds[n.k].dead) && n.o !== 1 && m.bonds[n.k].o !== 1)) continue;
+    const pos = new Map();
+    /* 반응 전부터 있던 이웃은 평면 위 (x, y, 0) */
+    let sx = 0, sy = 0;
+    for (const j of nbs) {
+      if (j < n0) { const P = mol0.atoms[j], dx = P.x - A.x, dy = P.y - A.y, L = Math.hypot(dx, dy) || 1; pos.set(j, [dx / L, dy / L, 0]); sx += dx / L; sy += dy / L; }
+    }
+    for (const j of nbs) if (j >= n0) pos.set(j, [0, 0, faces[c]]);
+    if (m.atoms[c].h === 1) {
+      if (addedH.has(c)) pos.set(-1, [0, 0, faces[c]]);
+      else { const L = Math.hypot(sx, sy) || 1; pos.set(-1, [-sx / L, -sy / L, 0]); }
+    }
+    const n = nbs.slice(); if (m.atoms[c].h === 1) n.push(-1);
+    if (n.length !== 4 || n.some(j => !pos.has(j))) continue;
+    const o = orient4(...n.map(j => pos.get(j)));
+    if (o) m.atoms[c] = { ...m.atoms[c], chi: { n, s: o }, face: true };
+    void other;
+  }
 }
 const isC = (m, i) => m.atoms[i].el === 'C';
 const live = (m, n) => !m.atoms[n.j].dead && !(m.bonds[n.k] && m.bonds[n.k].dead);
@@ -174,13 +209,17 @@ export const NUCS = {
   MeOH: { frag: 'OC', nuc: 'weak', base: 'weak', solvent: 'protic', heat: true, ko: '메탄올 (약한 친핵체 · 약한 염기, 양성자성 용매)' }
 };
 
-/* 치환: 탄소 c 의 이탈기 x 를 frag 로 바꾼다 */
-export function substitute(mol, c, x, frag) {
+/* 치환: 탄소 c 의 이탈기 x 를 frag 로 바꾼다. inv: 뒤쪽 공격(SN2)이면 배열이 거울상으로 뒤집힌다 (월든 반전) */
+export function substitute(mol, c, x, frag, inv = true) {
   const m = work(mol);
   m.atoms[x].dead = true;
   const bd = bondBetween(m, c, x); bd.dead = true;
   m.atoms[c].h += 1;
-  graft(m, c, frag);
+  const nu = graft(m, c, frag);
+  if (chiralOK(mol, c)) {
+    const chi = mol.atoms[c].chi;
+    m.atoms[c] = { ...m.atoms[c], chi: { n: chi.n.map(j => j === x ? nu : j), s: inv ? -chi.s : chi.s } };
+  }
   return finish(m)[0];
 }
 /* 제거: c 의 이탈기 x 와 β 탄소 bt 의 H 로 C=C. rel: 'cis'|'trans'|null (기준 치환기끼리) */

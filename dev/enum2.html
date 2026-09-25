@@ -6,9 +6,11 @@
 import { molblock, toSmiles } from '../js/chem/core.js';
 import { nameMolecule } from '../js/chem/name.js';
 import { FRAGMENTS, TEMPLATES, fromSmiles, attach, cycleBond, flipEZ } from '../js/chem/edit.js';
-/* ?n=2000&seed=1&max=6 : 뼈대에서 시작해 조각 붙이기 · 결합 바꾸기를 무작위로 max 번까지 */
+import { defineMissing, flipCenter, wedges, stereoInfo } from '../js/chem/stereo.js';
+/* ?n=2000&seed=1&max=6&rs=1 : 뼈대에서 시작해 조각 붙이기 · 결합 바꾸기를 무작위로 max 번까지.
+   rs=1 이면 입체중심마다 배열을 무작위로 정하고 MOL 에 쐐기를 적는다 (4번째 칸: 원자번호:R/S) */
 const q = new URLSearchParams(location.search);
-const N = +(q.get('n') || 1000), MAX = +(q.get('max') || 6);
+const N = +(q.get('n') || 1000), MAX = +(q.get('max') || 6), RS = q.get('rs') === '1';
 let seed = +(q.get('seed') || 1);
 const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
 const pick = a => a[Math.floor(rnd() * a.length)];
@@ -41,10 +43,16 @@ for (let t = 0; t < N; t++) {
     if (res && res.mol) m = res.mol;
     if (m.atoms.length > 45) break;
   }
+  let rsCol = '';
+  if (RS) {
+    m = defineMissing(m);
+    for (const c of stereoInfo(m).centers) if (rnd() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
+    rsCol = [...stereoInfo(m).rs].map(([c, d]) => (c + 1) + ':' + d).join(',');
+  }
   let name;
   try { name = nameMolecule(m).nameEn; stats.ok++; }
   catch (e) { const k = e.name === 'NameError' || e.constructor.name === 'NameError' ? 'NE: ' + e.message : 'CRASH: ' + e.message; stats.err[k] = (stats.err[k] || 0) + 1; name = null; if (k.startsWith('CRASH')) lines.push('#CRASH ' + toSmiles(m) + ' ' + e.stack.split('\n').slice(0, 3).join(' | ')); }
-  if (name) lines.push(toSmiles(m) + '\t' + name + '\t' + molblock(m).replace(/\n/g, '|'));
+  if (name) lines.push(toSmiles(m) + '\t' + name + '\t' + molblock(m, RS ? wedges(m) : null).replace(/\n/g, '|') + (RS ? '\t' + rsCol : ''));
 }
 lines.unshift('#STATS ' + JSON.stringify(stats));
 document.getElementById('out').textContent = lines.join('\n');

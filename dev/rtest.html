@@ -21,7 +21,7 @@ const CASES = [
   ['CC=C', 'hbr', '2-bromopropane'], ['CC=C', 'hbrroor', '1-bromopropane'], ['CC=C', 'hydration', 'propan-2-ol'], ['CC=C', 'hydrobor', 'propan-1-ol'],
   ['CC=C', 'oxymerc', 'propan-2-ol'], ['CC=C', 'br2', '1,2-dibromopropane'], ['CC=C', 'halohydrin', '1-bromopropan-2-ol'], ['CC=C', 'h2pd', 'propane'],
   ['CC=C', 'mcpba', '2-methyloxirane'], ['CC=C', 'oso4', 'propane-1,2-diol'], ['CC=C', 'o3', 'ethanal|methanal'],
-  ['CC(C)(C)C=C', 'hbr', '2-bromo-2,3-dimethylbutane', '3-bromo-2,2-dimethylbutane'], ['C1=CCCCC1', 'br2', '1,2-dibromocyclohexane'],
+  ['CC(C)(C)C=C', 'hbr', '2-bromo-2,3-dimethylbutane', '3-bromo-2,2-dimethylbutane'], ['C1=CCCCC1', 'br2', '(1R,2R)-1,2-dibromocyclohexane~(1S,2S)-1,2-dibromocyclohexane'],
   ['C1=CCCCC1', 'o3', 'hexanedial'], ['CC(C)=CC', 'hydrobor', '3-methylbutan-2-ol'], ['CC(C)=C', 'hbr', '2-bromo-2-methylpropane'],
   ['CC#C', 'lindlar', 'prop-1-ene'], ['CC#CC', 'lindlar', '(Z)-but-2-ene'], ['CC#CC', 'nanh3', '(E)-but-2-ene'], ['CC#CC', 'yne_h2', 'butane'],
   ['CCC#C', 'yne_hyd', 'butan-2-one'], ['CCC#C', 'yne_hb', 'butanal'], ['CCC#C', 'yne_alk', 'pent-2-yne'], ['CCC#C', 'yne_hbr', '2,2-dibromobutane'],
@@ -39,7 +39,14 @@ const CASES = [
   ['CC=O', 'aldol', '3-hydroxybutanal'], ['CC=O', 'aldolheat', '(E)-but-2-enal'], ['CCOC(C)=O', 'claisen', 'ethyl 3-oxobutanoate', 'ethanol'],
   ['C=CC=C', 'da_eth', 'cyclohexene'], ['C=CC=C', 'da_acr', 'methyl cyclohex-3-ene-1-carboxylate'], ['Brc1ccccc1', 'suzuki', '1,1′-biphenyl'],
   ['Brc1ccccc1', 'heck', 'methyl (E)-3-phenylprop-2-enoate'], ['Brc1ccccc1', 'sono', '(2-phenylethynyl)benzene'], ['Brc1ccccc1', 'buchwald', 'N,N-dimethylaniline'],
-  ['C=CCCCC=C', 'grubbs', 'cyclopentene', 'ethene'], ['C=CCCC', 'grubbs', '(E)-oct-4-ene', 'ethene']
+  ['C=CCCCC=C', 'grubbs', 'cyclopentene', 'ethene'], ['C=CCCC', 'grubbs', '(E)-oct-4-ene', 'ethene'],
+  /* ── 입체: SN2 반전, SN1 라세미, syn · anti 첨가 ── */
+  ['C[C@@H](Br)CC', 'nai', '(S)-2-iodobutane'], ['C[C@@H](Br)CC', 'nacn', '(S)-2-methylbutanenitrile'], ['C[C@@H](Br)CC', 'h2o', 'butan-2-ol'],
+  ['C[C@@H](O)CC', 'pbr3', '(S)-2-bromobutane'], ['C[C@@H](O)CC', 'pcc', 'butan-2-one'],
+  ['C/C=C/C', 'br2', '(2R,3S)-2,3-dibromobutane'], ['C/C=C\\C', 'br2', '(2R,3R)-2,3-dibromobutane~(2S,3S)-2,3-dibromobutane'],
+  ['C1=CCCCC1', 'oso4', '(1R,2S)-cyclohexane-1,2-diol'], ['C/C=C/C', 'oso4', '(2R,3R)-butane-2,3-diol~(2S,3S)-butane-2,3-diol'],
+  ['C/C=C\\C', 'mcpba', '(2R,3S)-2,3-dimethyloxirane'], ['CC1=CCCCC1', 'hydrobor', '(1R,2R)-2-methylcyclohexan-1-ol~(1S,2S)-2-methylcyclohexan-1-ol'],
+  ['CC=C', 'halohydrin', '1-bromopropan-2-ol'], ['C[C@@H](Br)CCC=C', 'hbr', '(2R)-2,5-dibromohexane~(2R,5S)-2,5-dibromohexane~2,5-dibromohexane']
 ];
 const out = [];
 let pass = 0, fail = 0;
@@ -54,7 +61,9 @@ for (const [smi, id, major, minor] of CASES) {
   else {
     const maj = res.products.filter(p => p.role === 'major').map(p => p.name && p.name.nameEn);
     const all = res.products.map(p => p.name && p.name.nameEn);
-    ok = major.split('|').every(n => maj.includes(n) || (major.split('|').length > 1 && all.includes(n))) && (!minor || minor.split('|').every(n => all.includes(n)));
+    /* '~' = 거울상 중 아무거나 (라세미에서 하나만 그림) */
+    const has = (list, n) => n.split('~').some(x => list.includes(x));
+    ok = major.split('|').every(n => has(maj, n) || (major.split('|').length > 1 && has(all, n))) && (!minor || minor.split('|').every(n => has(all, n)));
   }
   if (ok) pass++; else fail++;
   out.push(`${ok ? 'ok  ' : 'FAIL'} ${smi.padEnd(26)} ${id.padEnd(12)} ${res.ok ? names.join(' | ') : '반응 없음: ' + res.reason}${ok ? '' : '   ← want ' + major + (minor ? ' / ' + minor : '')}`);
