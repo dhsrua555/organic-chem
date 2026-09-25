@@ -1,5 +1,6 @@
 """버그 제보함 → 구글 폼 시험 (실제로는 보내지 않음: docs.google.com 요청을 가로챈다).
-FORM_URL 이 비어 있으면 시험용 주소로 바꿔 끼운다. 사용: python dev/bugform_test.py"""
+FORM_URL 이 비어 있으면 시험용 주소로 바꿔 끼운다. 사용: python dev/bugform_test.py
+--live 를 붙이면 가로채지 않고 실제 폼으로 "[시험]" 제보 하나만 보낸다 (응답 시트에서 확인)"""
 import sys, time
 from urllib.parse import parse_qs, urlparse
 from pathlib import Path
@@ -20,7 +21,8 @@ with sync_playwright() as pw:
         sent.append((route.request.method, route.request.url, route.request.post_data))
         if mode['fail']: route.abort()
         else: route.fulfill(status=200, body='')
-    p.route('https://docs.google.com/**', handle)
+    LIVE = '--live' in sys.argv
+    if not LIVE: p.route('https://docs.google.com/**', handle)
     p.goto(f'http://127.0.0.1:{PORT}/index.html#build'); time.sleep(3)
     p.evaluate('localStorage.clear()'); p.reload(); time.sleep(3)
     configured = p.evaluate("fetch('/js/report.js').then(r => r.text()).then(t => !/const FORM_URL = '';/.test(t))")
@@ -31,10 +33,14 @@ with sync_playwright() as pw:
     print('buttons:', vis, '|', p.inner_text('.bug-hint'))
     if vis[:1] != ['form*']: bad.append('보내기 버튼이 맨 앞에 없음')
     p.click('.bug-kinds label:nth-child(3) span')
-    p.fill('#bug-body', '[시험] 제보함 자동 시험입니다 — 무시해 주세요')
+    p.fill('#bug-body', '[시험] 제보함 자동 시험입니다 — 무시해 주세요' + (' (실제 폼 연결 확인 ' + time.strftime('%Y-%m-%d %H:%M') + ')' if LIVE else ''))
     p.fill('#bug-who', '시험')
-    p.click('[data-send="form"]'); time.sleep(0.8)
-    print('msg:', p.inner_text('.bug-msg'))
+    p.click('[data-send="form"]'); time.sleep(3 if LIVE else 0.8)
+    m = p.inner_text('.bug-msg')
+    print('msg:', m)
+    if LIVE:
+        print('errors:', errs); b.close(); srv.shutdown()
+        print('RESULT:', 'SENT — 응답 시트에서 확인' if '보냈습니다' in m and not errs else 'FAILED'); sys.exit(0)
     post = [x for x in sent if x[0] == 'POST' and x[1].endswith('/formResponse')]
     if not post: bad.append('formResponse POST 없음')
     else:

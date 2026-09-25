@@ -8,7 +8,7 @@ const REPO = 'https://github.com/dhsrua555/organic-chem';
 const KINDS = [['name', '이름이 틀려요'], ['react', '반응 결과가 이상해요'], ['draw', '그림 · 3D 가 이상해요'], ['ui', '버튼 · 화면 오류'], ['slow', '느려요 · 렉'], ['idea', '제안 · 기타']];
 
 /* 구글 폼: dev/bug_form.gs 를 돌려 나온 ‘▶ HEXA’ 미리 채운 주소. 비어 있으면 폼 보내기를 숨기고 GitHub 을 앞에 둔다 */
-const FORM_URL = '';
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScPktuwRSOunchB1TPvc-MljDYpC8Duhd7XnGbu2mLz1W3teA/viewform?usp=pp_url&entry.1608976692=%EC%9D%B4%EB%A6%84%EC%9D%B4+%ED%8B%80%EB%A0%A4%EC%9A%94&entry.143864953=WHAT&entry.784847364=WHO&entry.1034068629=CTX';
 /* 미리 채운 주소 → 폼 번호와 칸 번호(entry). 칸은 넣어 둔 표시 글자(WHAT · WHO · CTX · 첫 선택지)로 찾는다 */
 function parseForm(u) {
   const m = /\/forms\/d\/e\/([\w-]+)\//.exec(u || '');

@@ -3,7 +3,7 @@ import { $, $$, store, getLang, setLang, mq } from './ui.js';
 import { startFx } from './fx.js';
 import { initReport } from './report.js';
 
-const VERSION = 'v6 · 2026-09-26';
+const VERSION = 'v8 · 2026-09-26';
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
 const low = mq('(pointer: coarse)') || Math.min(innerWidth, innerHeight) < 700;
