@@ -1,6 +1,8 @@
 /* 입체중심의 R/S: CIP 순위 + 원자의 배열(chi) → R 또는 S.
-   그림: 입체중심마다 결합 하나를 쐐기(앞으로 나옴) 또는 점선 쐐기(뒤로 들어감)로 그린다.
-   편집기에서 새로 생긴 입체중심은 "붙인 쪽이 쐐기(앞)" 인 배열로 정해 두고, R/S 도구로 뒤집는다 */
+   고리의 cis/trans: 고리 원자 둘에 치환기가 하나씩 있으면(각각 H 하나) 두 치환기가 고리의 같은 면(cis) · 반대 면(trans).
+     1,4-다이메틸사이클로헥세인처럼 R/S 가 없는 경우도 이 "입체 자리"의 배열로 구별한다.
+   그림: 입체 자리마다 결합 하나를 쐐기(앞으로 나옴) 또는 점선 쐐기(뒤로 들어감)로 그린다.
+   편집기에서 새로 생긴 입체 자리는 "붙인 쪽이 쐐기(앞)" 인 배열로 정해 두고, R/S 도구로 뒤집는다 */
 import { clone, chiralOK, chiSignFor, rings } from './core.js';
 import { rankBranches, stereocenters, compareBranch } from './cip.js';
 
@@ -14,6 +16,47 @@ export function rsOf(mol, c) {
   if (!r) return null;
   const s = chiSignFor(mol.atoms[c].chi, r.map(x => x.atom));
   return s > 0 ? 'R' : s < 0 ? 'S' : null;
+}
+/* 고리 입체 자리: 방향족이 아닌 고리의 sp³ 원자 중 H 하나 + 고리 밖 치환기 하나. 같은 고리에 둘 이상일 때만.
+   반환 Map 고리 번호 → [원자] (고리 순서대로) */
+export function ringSites(mol) {
+  const R = rings(mol), out = new Map();
+  R.list.forEach((ring, ri) => {
+    const sites = ring.filter(i => {
+      const a = mol.atoms[i];
+      if (a.el !== 'C' || a.h !== 1 || mol.nb[i].length !== 3) return false;
+      if (mol.nb[i].some(n => n.o !== 1 || mol.bonds[n.k].arom)) return false;
+      return mol.nb[i].filter(n => !ring.includes(n.j)).length === 1;
+    });
+    if (sites.length >= 2) out.set(ri, sites);
+  });
+  return out;
+}
+/* 배열을 정해야 하는 자리 전부: 입체중심 + 고리 입체 자리 */
+export function stereoSites(mol) {
+  const set = new Set(stereocenters(mol));
+  for (const list of ringSites(mol).values()) list.forEach(i => set.add(i));
+  return [...set].sort((a, b) => a - b);
+}
+/* 고리 원자 i 의 치환기가 고리의 어느 면(±1)인가: 고리를 적힌 순서로 돌 때의 앞 · 뒤 원자로 잰다 */
+function faceOf(mol, ring, i) {
+  if (!chiralOK(mol, i)) return 0;
+  const k = ring.indexOf(i), m = ring.length;
+  const exo = mol.nb[i].find(n => !ring.includes(n.j));
+  if (!exo) return 0;
+  return chiSignFor(mol.atoms[i].chi, [ring[(k - 1 + m) % m], ring[(k + 1) % m], exo.j, -1]);
+}
+/* 고리마다 치환기 쌍의 cis/trans: [{ ring(번호), atoms: [a, b], rel }] (배열이 정해진 쌍만) */
+export function cisTrans(mol) {
+  const R = rings(mol), out = [];
+  for (const [ri, sites] of ringSites(mol)) {
+    const ring = R.list[ri];
+    for (let p = 0; p < sites.length; p++) for (let q = p + 1; q < sites.length; q++) {
+      const fa = faceOf(mol, ring, sites[p]), fb = faceOf(mol, ring, sites[q]);
+      if (fa && fb) out.push({ ring: ri, atoms: [sites[p], sites[q]], rel: fa === fb ? 'cis' : 'trans', n: sites.length });
+    }
+  }
+  return out;
 }
 /* 분자의 입체중심 전부: R/S 가 정해진 것(rs)과 안 정해진 것(undef) */
 export function stereoInfo(mol) {
@@ -68,7 +111,7 @@ function candidates(mol, c, R, taken) {
 /* 쐐기 결합: Map 결합번호 → { from(입체중심), to, up(true = 앞으로 나온 쐐기) } */
 export function wedges(mol) {
   const R = rings(mol), out = new Map();
-  const cs = stereocenters(mol).filter(c => chiralOK(mol, c));
+  const cs = stereoSites(mol).filter(c => chiralOK(mol, c));
   const taken = new Set(cs);
   for (const c of cs) {
     const w = chooseWedge(mol, c, mol.atoms[c].chi.n, R, taken, out);
@@ -80,10 +123,11 @@ export function wedges(mol) {
 }
 /* 배열이 없는 입체중심에 배열을 정해 준다 (가장 알맞은 결합이 앞으로 나온 쐐기가 되도록). 바뀌면 새 분자 */
 export function defineMissing(mol) {
-  const miss = stereocenters(mol).filter(c => !chiralOK(mol, c));
+  const sites = stereoSites(mol);
+  const miss = sites.filter(c => !chiralOK(mol, c));
   if (!miss.length) return mol;
   const m = clone(mol), R = rings(m);
-  const taken = new Set(stereocenters(m));
+  const taken = new Set(sites);
   for (const c of miss) {
     const n = m.nb[c].map(x => x.j);
     if (m.atoms[c].h) n.push(-1);
@@ -96,7 +140,7 @@ export function defineMissing(mol) {
 }
 /* 입체중심 c 의 배열을 뒤집는다 (R ↔ S) */
 export function flipCenter(mol, c) {
-  if (!chiralOK(mol, c) || !stereocenters(mol).includes(c)) return { error: '입체중심(치환기 넷이 모두 다른 sp³ 탄소)을 눌러 주세요' };
+  if (!chiralOK(mol, c) || !stereoSites(mol).includes(c)) return { error: '입체중심(치환기 넷이 모두 다른 sp³ 탄소)이나 고리의 치환된 탄소(cis/trans)를 눌러 주세요' };
   const m = clone(mol);
   m.atoms[c] = { ...m.atoms[c], chi: { n: m.atoms[c].chi.n.slice(), s: -m.atoms[c].chi.s } };
   return { mol: m };

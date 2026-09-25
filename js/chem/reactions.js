@@ -1,10 +1,11 @@
-/* 반응 목록과 예측 규칙. 각 반응: 기질에서 반응 자리를 찾고 생성물 그래프를 만든 뒤, 풀이 · 선택성 · 최신 관점을 붙인다 */
-import { clone, parseSmiles, addBond, bondBetween, rings, isBenzene, subMol } from './core.js';
+/* 반응 목록과 예측 규칙. 각 반응: 기질에서 반응 자리를 찾고 생성물 그래프를 만든 뒤, 풀이 · 선택성 · 최신 관점을 붙인다.
+   규칙은 스미스 · 브루스 유기화학의 반응 단원을 따르고, 교과서 이후 바뀐 이해 · 방법은 반응마다 modern 에 적는다 */
+import { clone, parseSmiles, addBond, bondBetween, rings, isBenzene, subMol, chiralOK } from './core.js';
 import { layout } from './layout.js';
 import { nameMolecule } from './name.js';
 import {
   work, graft, setBond, cut, finish, carbonNbrs, classOf, cationScore, shiftFor, applyShift, alkeneDegree, scan, product, none, rolesByKey,
-  NUCS, substitute, eliminate, betas, faceStereo, settleFaces
+  NUCS, substitute, eliminate, betas, faceStereo, settleFaces, antiE2
 } from './react.js';
 
 const CLS = ['메틸', '1차', '2차', '3차', '4차'];
@@ -63,10 +64,21 @@ function rankAlkenes(list, hofmann) {
   uniq.sort((p, q) => (hofmann ? p.deg - q.deg : q.deg - p.deg) || (/\(Z\)|\dZ/.test(p.name) - /\(Z\)|\dZ/.test(q.name)));
   return uniq;
 }
-function e2Products(mol, c, x, hofmann) {
+/* E2: β 탄소마다 안티 평면 H 가 있는지 보고(고리는 trans-다이축), 사슬에서 배열이 정해져 있으면 E/Z 하나만 */
+function e2Products(mol, c, x, hofmann, why = { blocked: [], fixed: [] }) {
   const alk = [];
-  for (const bt of betas(mol, c)) for (const rel of ['trans', 'cis']) alk.push({ mol: eliminate(mol, c, x, bt, rel), deg: alkeneDegree(mol, c, bt) });
+  for (const bt of betas(mol, c)) {
+    const a = antiE2(mol, c, x, bt);
+    if (!a.ok) { why.blocked.push(bt); continue; }
+    if (a.rel) why.fixed.push(bt);
+    for (const rel of a.rel ? [a.rel] : ['trans', 'cis']) alk.push({ mol: eliminate(mol, c, x, bt, rel), deg: alkeneDegree(mol, c, bt) });
+  }
   return rankAlkenes(alk, hofmann);
+}
+/* E2 입체 설명 */
+function e2Notes(res, why) {
+  if (why.blocked.length) res.select.push('고리에서 E2 는 이탈기와 β-H 가 둘 다 축 방향(trans-다이축, 180°)이어야 합니다. 이탈기와 같은 면(cis)에 있는 H 는 떼어지지 않아, 자이체프 규칙과 다른 알켄만 생길 수 있습니다 (예: 멘틸 클로라이드 → 덜 치환된 알켄만).');
+  if (why.fixed.length) res.select.push('안티 평면: 두 입체중심의 배열 때문에 H 와 이탈기가 180° 가 되는 모양이 하나뿐 → 알켄의 E/Z 가 하나로 정해집니다 (입체 특이적 제거).');
 }
 
 /* ── 할로젠화 알킬 ─────────────────────────────── */
@@ -100,16 +112,23 @@ function snE(key) {
         { t: '속도', d: `속도 = k[기질][친핵체] (2차). ${cls === 0 ? '메틸' : cls === 1 ? '1차' : '2차'} 탄소라 입체 장애가 ${cls <= 1 ? '작아 빠릅니다' : '조금 있어 느린 편입니다'}.${N.solvent === 'aprotic' ? ' 극성 비양성자성 용매(아세톤 · DMSO)는 친핵체를 덜 감싸 SN2 를 빠르게 합니다.' : ''}` }
       ];
       res.select.push('입체: 탄소가 입체중심이면 배열이 뒤집힙니다 (월든 반전).');
+      if (key === 'NaI') res.select.push('NaCl · NaBr 은 아세톤에 녹지 않아 가라앉으므로 평형이 오른쪽으로 끌려갑니다 (르 샤틀리에).');
+      if (key === 'NH3') res.select.push('NH₃ 가 적으면 생긴 아민이 또 알킬화되어 2차 · 3차 아민 · 4차 암모늄염이 섞입니다 — 그래서 NH₃ 를 크게 과량으로 씁니다.');
       res.modern.push({ y: '2008', t: '기체 상태 SN2 를 분자빔으로 직접 관찰한 실험에서, 교과서의 "뒤쪽 공격" 외에 친핵체가 탄소 주위를 한 바퀴 도는 "라운드어바웃" 경로도 발견되었습니다 (Mikosch 외, Science 2008).' });
     } else if (path === 'E2' || path === 'E2h' || path === 'E2+SN2') {
       const hof = path === 'E2h';
       res.mech = path === 'E2+SN2' ? 'E2 (주) + SN2 (부)' : 'E2';
-      const alk = e2Products(mol, c, x, hof);
-      alk.forEach((p, i) => res.products.push(product(p.mol, i === 0 ? 'major' : 'minor', { tag: 'E2' })));
+      const why = { blocked: [], fixed: [] };
+      const alk = e2Products(mol, c, x, hof, why);
+      alk.forEach((p, i) => res.products.push(product(p.mol, i === 0 ? 'major' : 'minor', { tag: why.fixed.length ? 'E2 · 안티' : 'E2' })));
+      if (!alk.length) return none('모든 β-H 가 이탈기와 안티 평면(고리에서는 trans-다이축)이 될 수 없어 E2 가 일어나지 않습니다.', { mech: '반응 없음 (E2 불가)' });
       if (path === 'E2+SN2') res.products.push(product(substitute(mol, c, x, N.frag), 'minor', { tag: 'SN2' }));
+      e2Notes(res, why);
       res.steps = [
         { t: '한 단계 제거', d: `염기가 β 탄소의 H 를 떼는 동시에 C–${X} 가 끊기며 C=C 가 생깁니다. H 와 ${X} 는 ${b('안티 평면')}(서로 180°)이어야 합니다.` },
-        { t: hof ? '호프만 규칙' : '자이체프 규칙', d: hof ? '부피 큰 염기(tert-뷰톡사이드)는 가려지지 않은 바깥쪽 H 를 떼어 치환이 적은 알켄이 주생성물이 됩니다.' : '더 많이 치환된(안정한) 알켄이 주생성물입니다. 같은 알켄이면 E(트랜스)가 Z 보다 많습니다.' }
+        why.blocked.length
+          ? { t: '안티 평면이 자이체프보다 먼저', d: '더 치환된 알켄을 만들 β-H 가 이탈기와 trans-다이축(180°)이 될 수 없어 떼어지지 않습니다. 그래서 덜 치환된 알켄이 생깁니다 — E2 는 먼저 기하 조건, 그다음 안정성.' }
+          : { t: hof ? '호프만 규칙' : '자이체프 규칙', d: hof ? '부피 큰 염기(tert-뷰톡사이드)는 가려지지 않은 바깥쪽 H 를 떼어 치환이 적은 알켄이 주생성물이 됩니다.' : `더 많이 치환된(안정한) 알켄이 주생성물입니다.${why.fixed.length ? ' 두 입체중심 때문에 안티 평면 모양이 하나뿐이라 E/Z 는 하나로 정해집니다.' : ' 같은 알켄이면 E(트랜스)가 Z 보다 많습니다.'}` }
       ];
       if (path === 'E2+SN2') res.select.push('2차 기질 + 강한 염기(OH⁻ · RO⁻): 제거가 우세하고 치환은 적게 섞입니다. 온도를 올리면 제거가 더 늘어납니다.');
       if (cls === 2 && key !== 'tBuOK') res.modern.push({ y: '현대', t: '2차 기질에서 SN2 · E2 비율은 염기의 세기뿐 아니라 용매와 온도에 크게 좌우됩니다. 계산화학은 두 전이 상태의 에너지 차가 대개 수 kJ/mol 수준이라 조건에 민감하다는 것을 보여 줍니다.' });
@@ -161,7 +180,9 @@ function alcoholToHalide(reagent) {
         : [{ t: 'OH 활성화', d: reagent === 'SOCl2' ? 'O 가 SOCl₂ 의 S 를 공격해 클로로설파이트(좋은 이탈기)가 됩니다.' : 'O 가 PBr₃ 의 P 를 공격해 O–PBr₂ (좋은 이탈기)가 됩니다.' },
           { t: '뒤쪽 공격', d: `${X}⁻ 가 뒤쪽에서 공격 (SN2). 양이온을 거치지 않으므로 ${b('자리옮김이 없습니다')}.` }];
       res.select.push('입체: 입체중심이면 반전.');
+      if (reagent === 'SOCl2') res.select.push('피리딘이 있으면 Cl⁻ 가 뒤쪽에서 공격해 반전. 피리딘 없이 SOCl₂ 만 쓰면 배열이 유지되는 SNi 경로가 섞일 수 있습니다.');
     }
+    res.modern.push({ y: '현대', t: '미츠노부 반응(PPh₃ + DEAD/DIAD)은 알코올을 배열 반전하며 에스터 · 아자이드 등으로 바꾸는 표준 방법이고, 아펠 반응(PPh₃ + CBr₄)은 순한 조건에서 OH → Br 로 바꿉니다.' });
     return res;
   };
 }
@@ -189,6 +210,7 @@ function dehydrate(mol, S) {
     res.steps = [{ t: '양성자 첨가', d: 'OH → –OH₂⁺.' }, { t: '한 단계 제거', d: '1차 양이온은 너무 불안정해 E2 로 H 와 H₂O 가 함께 빠집니다.' }];
   }
   res.select.push('가열 · 진한 H₂SO₄ 조건. 온도가 낮으면 에터가 생기기도 합니다.');
+  res.select.push('평형 반응(산 촉매 수화의 역반응): 끓는점이 낮은 알켄을 증류로 빼내 수율을 올립니다.');
   return res;
 }
 function oxidize(strong) {
@@ -210,6 +232,7 @@ function oxidize(strong) {
       : [{ t: 'Cr(VI) 에스터', d: 'PCC 의 Cr 에 O 가 붙습니다.' }, { t: 'C=O 생성', d: '물이 없는 CH₂Cl₂ 에서 반응하므로 1차 알코올은 알데하이드에서 멈춥니다.' }];
     res.select.push(strong ? '1차 → 카복실산, 2차 → 케톤, 3차 → 반응 없음.' : '1차 → 알데하이드, 2차 → 케톤, 3차 → 반응 없음.');
     res.modern.push({ y: '현대', t: '6가 크로뮴은 발암성이 있어 요즘 연구실에서는 스원 산화, 데스–마틴 퍼아이오디네인(DMP), TEMPO/NaOCl 산화를 주로 씁니다. 결과(1차 → 알데하이드)는 PCC 와 같습니다.' });
+    if (strong) res.modern.push({ y: '1998 · 현대', t: '그린 케미스트리 12원칙(아나스타스 · 워너, 1998) 이후 산업에서는 크로뮴 대신 산소 · 과산화수소를 산화제로 쓰는 촉매 산화(TEMPO/공기, 백금 촉매 등)로 바뀌고 있습니다.' });
     return res;
   };
 }
@@ -267,6 +290,7 @@ function addAlkene(kind) {
         setBond(m, a, bb, spec.cleave ? 0 : 1);
         if (spec.cleave) { cut(m, a, bb); graft(m, a, 'O', 2, false); graft(m, bb, 'O', 2, false); continue; }
         if (spec.epoxide) { const o = graft(m, a, 'O', 1, false); addBond(m, bb, o, 1); m.atoms[o].h = 0; faceStereo(mol, m, a, bb, { [a]: 1, [bb]: 1 }, new Set(), n0); faced = true; continue; }
+        if (spec.cyclo) { const k = graft(m, a, 'C', 1, false); addBond(m, bb, k, 1); m.atoms[k].h = 2; faceStereo(mol, m, a, bb, { [a]: 1, [bb]: 1 }, new Set(), n0); faced = true; continue; }
         const addedH = new Set();
         for (const [atom, f] of [[hi, spec.hi], [lo, spec.lo]]) { if (f === 'H') { m.atoms[atom].h += 1; addedH.add(atom); } else graft(m, atom, f, 1, false); }
         /* 한 번에 같은 면(syn) 또는 반대 면(anti)으로 붙는 반응만 배열이 정해진다 */
@@ -285,6 +309,8 @@ function addAlkene(kind) {
 const SPEC = {
   HBr: { cation: true, nuc: 'Br', mech: '친전자성 첨가 (마르코브니코프)', nucStep: 'Br⁻ 결합', nucText: '브로민화 이온이 양이온 탄소에 붙습니다.', select: ['위치: Br 은 치환이 많은 탄소에 (마르코브니코프).', '입체: 평면 양이온 → 새 입체중심은 라세미.'] },
   HCl: { cation: true, nuc: 'Cl', mech: '친전자성 첨가 (마르코브니코프)', nucStep: 'Cl⁻ 결합', nucText: '염화 이온이 양이온 탄소에 붙습니다.', select: ['위치: Cl 은 치환이 많은 탄소에.'] },
+  MeOH: { cation: true, nuc: 'OC', mech: '산 촉매 알코올 첨가 (마르코브니코프)', nucStep: 'CH₃OH 결합 → H⁺ 이탈', nucText: '메탄올의 O 가 양이온 탄소에 붙고 H⁺ 를 잃어 에터가 됩니다.', select: ['위치: OCH₃ 는 치환이 많은 탄소에.', '양이온을 거치므로 자리옮김이 일어날 수 있습니다.'] },
+  simmons: { cyclo: true, mech: '시먼스–스미스 고리 프로페인화 (syn, 협동)', tag: '고리', steps: [{ t: '카베노이드', d: 'CH₂I₂ 와 Zn(Cu) 가 ICH₂ZnI 를 만듭니다. 자유 카벤이 아니라 카벤처럼 행동하는 "카베노이드".' }, { t: '한 번에 두 결합', d: 'CH₂ 가 이중결합의 같은 면에서 두 탄소에 동시에 붙어 사이클로프로페인 (나비 모양 전이 상태).' }], select: ['입체 특이적: cis 알켄 → cis 치환 사이클로프로페인, trans → trans.', '다이아조메테인 + 빛으로 만든 자유 카벤(:CH₂)은 C–H 에도 끼어들어 부반응이 많아, 시먼스–스미스 시약이 실험실 표준입니다.'], modern: [{ y: '현대', t: '키랄 리간드를 쓰는 비대칭 시먼스–스미스, 다이아조 화합물과 Rh · Cu 촉매 고리 프로페인화, 효소(조작한 사이토크롬 P450)로 한쪽 거울상 사이클로프로페인을 만드는 방법이 의약품 합성에 쓰입니다 (아널드, 2018 노벨상).' }] },
   H2O: { cation: true, nuc: 'O', mech: '산 촉매 수화 (마르코브니코프)', nucStep: '물 결합 → H⁺ 이탈', nucText: '물이 양이온에 붙고 H⁺ 를 잃어 알코올이 됩니다 (H⁺ 는 촉매로 되돌아감).', select: ['위치: OH 는 치환이 많은 탄소에.', '양이온을 거치므로 자리옮김이 일어날 수 있습니다.'] },
   HBrROOR: { hi: 'H', lo: 'Br', anti: false, mech: '라디칼 첨가 (반마르코브니코프)', tag: '라디칼', steps: [{ t: '개시', d: '과산화물 RO–OR 이 빛 · 열로 끊겨 RO· 가 생기고, HBr 에서 H 를 떼어 Br· 를 만듭니다.' }, { t: 'Br· 첨가', d: `Br· 가 ${b('H 가 더 많은 탄소')}에 붙어 더 안정한(치환 많은) 탄소 라디칼이 생깁니다.` }, { t: 'H 떼기', d: '탄소 라디칼이 HBr 의 H 를 떼어 생성물 + Br· (연쇄 반응).' }], select: ['위치: Br 은 치환이 적은 탄소에 (반마르코브니코프). HBr 만 이렇게 되고 HCl · HI 는 안 됩니다.'] },
   oxymerc: { hi: 'O', lo: 'H', mech: '옥시수은화–탈수은화 (마르코브니코프)', tag: '첨가', steps: [{ t: '수은 고리 이온', d: 'Hg(OAc)₂ 가 이중결합과 3원자 고리(머큐리늄) 이온을 만듭니다 — 자유 양이온이 아니라 자리옮김이 없습니다.' }, { t: '물의 공격', d: '물이 치환이 많은 탄소를 공격해 고리를 엽니다.' }, { t: '탈수은화', d: 'NaBH₄ 가 C–Hg 를 C–H 로 바꿉니다.' }], select: ['위치: 마르코브니코프, 자리옮김 없음.'], modern: [{ y: '현대', t: '수은은 독성이 커서 요즘은 거의 쓰지 않습니다. 코발트 촉매와 실레인 · 산소를 쓰는 무카이야마 수화처럼 수은 없이 마르코브니코프 알코올을 얻는 방법이 쓰입니다.' }] },
@@ -345,7 +371,7 @@ function alkyne(kind) {
       NaNH3: ['용해 금속 환원 (trans 알켄)', [{ t: '전자 하나씩', d: 'Na 가 전자를 하나씩 주어 라디칼 음이온 → 비닐 라디칼 → 비닐 음이온. NH₃ 가 H 를 줍니다.' }, { t: 'trans', d: '비닐 라디칼 · 음이온이 치환기끼리 멀리 떨어진 trans 모양을 취해 (E) 알켄.' }], []],
       hydration: ['수화 (마르코브니코프) → 케톤', [{ t: '엔올', d: 'Hg²⁺ 촉매로 물이 치환 많은 탄소에 붙어 엔올이 생깁니다.' }, { t: '호변 이성질', d: '엔올은 곧바로 더 안정한 케토 형태로 바뀝니다. 말단 알카인 → 메틸 케톤.' }], [{ y: '현대', t: '수은 대신 금(Au) 촉매로 알카인을 수화하는 방법이 2000년대 이후 널리 쓰입니다.' }]],
       hydrobor: ['수소붕소화–산화 → 알데하이드', [{ t: '부피 큰 보레인', d: '(sia)₂BH · 9-BBN 이 한 번만 붙어 B 는 말단 탄소에.' }, { t: '엔올 → 알데하이드', d: '산화로 생긴 엔올이 호변 이성질화 → 말단 알카인은 알데하이드.' }], []],
-      alkylate: ['아세틸라이드 알킬화 (C–C 결합)', [{ t: '탈양성자', d: 'NaNH₂ (pKa 38) 가 말단 C–H (pKa 25)를 떼어 아세틸라이드 음이온.' }, { t: 'SN2', d: '아세틸라이드가 CH₃I 를 공격해 새 C–C 결합.' }], []],
+      alkylate: ['아세틸라이드 알킬화 (C–C 결합)', [{ t: '탈양성자', d: 'NaNH₂ (NH₃ 의 pKa 약 36~38) 가 말단 C–H (pKa 약 25)를 떼어 아세틸라이드 음이온.' }, { t: 'SN2', d: '아세틸라이드가 CH₃I 를 공격해 새 C–C 결합. 2차 · 3차 할로젠화물이면 강염기인 아세틸라이드 때문에 E2 가 이깁니다.' }], [{ y: '2002 · 2022', t: '말단 알카인은 구리 촉매로 아자이드와 트라이아졸 고리를 만듭니다 (CuAAC, "클릭 화학" — 샤플리스 · 멜달, 2002). 살아 있는 세포 안에서도 되는 생체 직교 반응(버토지)과 함께 2022 노벨 화학상.' }]],
       HBr2: ['HBr 2당량 첨가', [{ t: '두 번의 마르코브니코프', d: '첫 HBr 로 브로모알켄, 두 번째 HBr 도 같은 탄소에 → 제미널 다이브로마이드.' }], []]
     }[kind];
     res.mech = T[0]; res.steps = T[1]; res.modern.push(...T[2]);
@@ -387,12 +413,13 @@ function reduce(reagent) {
     const prods = finish(m);
     const res = { products: rolesByKey(prods, '환원'), steps: [], select: [], modern: [], sites: sites.map(s => s.c) };
     const T = {
-      NaBH4: ['수소화 음이온 첨가', [{ t: 'H⁻ 공격', d: 'BH₄⁻ 의 H⁻ 가 C=O 탄소를 공격해 알콕사이드.' }, { t: '양성자화', d: '용매(메탄올)가 O⁻ 에 H 를 주어 알코올.' }], ['알데하이드 → 1차 알코올, 케톤 → 2차 알코올.', 'NaBH₄ 는 에스터 · 산 · 아마이드를 건드리지 않습니다 (화학 선택성).']],
+      NaBH4: ['수소화 음이온 첨가', [{ t: 'H⁻ 공격', d: 'BH₄⁻ 의 H⁻ 가 C=O 탄소를 공격해 알콕사이드.' }, { t: '양성자화', d: '용매(메탄올)가 O⁻ 에 H 를 주어 알코올.' }], ['알데하이드 → 1차 알코올, 케톤 → 2차 알코올.', 'NaBH₄ 는 에스터 · 산 · 아마이드를 거의 건드리지 않습니다 (화학 선택성).', '새 입체중심이 생기면 평면 C=O 의 양면에서 H⁻ 가 와서 라세미.']],
       LiAlH4: ['강한 수소화 음이온 환원', [{ t: 'H⁻ 공격', d: 'AlH₄⁻ 가 C=O 에 H⁻ 를 줍니다. 에스터는 알콕시가 떨어져 알데하이드가 되고, 한 번 더 환원됩니다.' }, { t: '처리', d: 'H₂O 로 처리해 알코올 · 아민.' }], ['에스터 → 1차 알코올 + 알코올(알콕시 쪽), 카복실산 → 1차 알코올, 아마이드 → 아민, 나이트릴 → 1차 아민.']],
       DIBAL: ['DIBAL-H 부분 환원', [{ t: '−78 °C', d: '낮은 온도에서 H⁻ 하나만 주고 사면체 중간체가 안정하게 머뭅니다.' }, { t: '처리', d: '물로 처리할 때 비로소 알데하이드가 됩니다 (더 환원되지 않음).' }], ['에스터 → 알데하이드 + 알코올, 나이트릴 → 알데하이드.']],
       WK: ['볼프–키시너 환원 (C=O → CH₂)', [{ t: '하이드라존', d: 'H₂NNH₂ 가 C=O 와 하이드라존을 만듭니다.' }, { t: 'N₂ 방출', d: 'KOH 로 가열하면 N₂ 가 빠지며 CH₂ 가 됩니다.' }], ['카보닐이 메틸렌(CH₂)으로. 산에 약한 분자에 좋고, 산성 조건이면 클레멘슨 환원(Zn(Hg), HCl).']]
     }[reagent];
     res.mech = T[0]; res.steps = T[1]; res.select.push(...T[2]);
+    if (reagent === 'NaBH4') res.modern.push({ y: '현대', t: 'CBS 촉매(옥사자보롤리딘)나 케톤 환원 효소(KRED)로 한쪽 거울상 알코올만 만드는 비대칭 환원이 의약품 생산의 표준이 되었습니다. 효소는 유도 진화로 산업 조건에 맞게 개량해 씁니다.' });
     return res;
   };
 }
@@ -443,7 +470,7 @@ function wittig(mol, S) {
   return {
     mech: '비티히 반응 (C=O → C=C)', sites: sites.map(s => s.c), products: [product(finish(m)[0], 'major', { tag: '비티히' })],
     steps: [{ t: '일라이드 공격', d: 'Ph₃P=CH₂ 의 탄소가 C=O 탄소를 공격합니다.' }, { t: '옥사포스페테인', d: 'P–O 가 이어진 4원자 고리가 생겼다가 쪼개지며 C=C 와 Ph₃P=O.' }],
-    select: ['C=O 가 있던 자리에 정확히 C=C (위치가 섞이지 않음).'],
+    select: ['C=O 가 있던 자리에 정확히 C=C (위치가 섞이지 않음).', '안정화되지 않은 일라이드(Ph₃P=CHR, R = 알킬)는 주로 Z-알켄, 안정화된 일라이드(Ph₃P=CHCOOR 처럼 C=O 가 붙은 것)는 주로 E-알켄을 줍니다.'],
     modern: [{ y: '2013', t: '교과서에 흔히 그리던 베타인 중간체는 리튬염이 없으면 관찰되지 않습니다. 일라이드와 C=O 가 [2+2] 로 곧바로 옥사포스페테인을 만든다는 것이 현재 해석입니다 (Byrne · Gilheany 총설, Chem. Soc. Rev. 2013).' }]
   };
 }
@@ -451,7 +478,7 @@ function wittig(mol, S) {
 /* ── 카복실산 유도체 ─────────────────────────── */
 function acyl(kind) {
   return (mol, S) => {
-    const need = { fischer: ['acid'], socl2: ['acid'], water: ['acylhalide'], alcohol: ['acylhalide'], ammonia: ['acylhalide', 'ester'], methylamine: ['acylhalide'], sapon: ['ester'], nitrileHyd: ['nitrile'], amideHyd: ['amide'] }[kind];
+    const need = { fischer: ['acid'], socl2: ['acid'], water: ['acylhalide'], alcohol: ['acylhalide'], ammonia: ['acylhalide', 'ester'], methylamine: ['acylhalide'], sapon: ['ester'], esterHyd: ['ester'], nitrileHyd: ['nitrile'], amideHyd: ['amide'] }[kind];
     const sites = S.carbonyls.filter(x => need.includes(x.kind));
     if (!sites.length) return none(`이 시약과 반응할 ${need.map(k => ({ acid: '카복실산', acylhalide: '산 염화물', ester: '에스터', nitrile: '나이트릴', amide: '아마이드' }[k])).join(' · ')}이(가) 없습니다.`);
     const m = work(mol);
@@ -466,20 +493,21 @@ function acyl(kind) {
         if (k === 'acylhalide') { lg = f.halo[0]; m.atoms[lg].dead = true; bondBetween(m, c, lg).dead = true; }
         else if (k === 'ester') { lg = f.OR[0].o; cut(m, c, lg); m.atoms[lg].h += 1; }
         else if (k === 'amide') { lg = f.N[0]; cut(m, c, lg); m.atoms[lg].h += 1; }
-        const nu = { water: 'O', alcohol: 'OC', ammonia: 'N', methylamine: 'NC', sapon: 'O', amideHyd: 'O' }[kind];
+        const nu = { water: 'O', alcohol: 'OC', ammonia: 'N', methylamine: 'NC', sapon: 'O', esterHyd: 'O', amideHyd: 'O' }[kind];
         graft(m, c, nu, 1, false);
       }
     }
     const prods = finish(m);
     const T = {
-      fischer: ['피셔 에스터화 (평형)', [{ t: 'C=O 활성화', d: 'H⁺ 가 C=O 의 O 에 붙어 탄소가 더 양전하를 띱니다.' }, { t: '사면체 중간체', d: '메탄올이 붙었다가 물이 떨어집니다 (첨가–제거).' }], ['평형 반응: 알코올을 많이 넣거나 물을 빼야 수율이 올라갑니다.'], [{ y: '현대', t: '리페이스 같은 효소로 물 대신 순한 조건에서 에스터를 만드는 생촉매 방법이 향료 · 의약품 산업에 쓰입니다 (효소 진화 연구로 아널드가 2018 노벨상).' }]],
+      fischer: ['피셔 에스터화 (평형)', [{ t: 'C=O 활성화', d: 'H⁺ 가 C=O 의 O 에 붙어 탄소가 더 양전하를 띱니다.' }, { t: '사면체 중간체', d: '메탄올이 붙었다가 물이 떨어집니다 (첨가–제거). 동위원소 ¹⁸O 표지로 에스터의 O 는 알코올에서 온 것임이 확인됩니다.' }], ['평형 반응: 알코올을 많이 넣거나 물을 빼야 수율이 올라갑니다.'], [{ y: '현대', t: '리페이스 같은 효소로 순한 조건에서 에스터를 만드는 생촉매 방법이 향료 · 의약품 산업에 쓰입니다. 효소를 실험실에서 진화시켜 원하는 반응에 맞추는 "유도 진화"로 아널드가 2018 노벨 화학상을 받았습니다.' }]],
       socl2: ['산 염화물 만들기', [{ t: '클로로설파이트', d: 'OH 가 SOCl₂ 와 반응해 좋은 이탈기가 됩니다.' }, { t: 'Cl⁻ 첨가–제거', d: 'Cl⁻ 가 붙고 SO₂ · HCl 이 빠집니다.' }], ['가장 반응성이 큰 산 유도체를 만듭니다 (다른 유도체의 출발 물질).'], []],
       water: ['가수분해', [{ t: '첨가–제거', d: '물이 C=O 탄소에 붙고 Cl⁻ 가 떨어집니다.' }], ['산 염화물은 물과 격렬히 반응합니다.'], []],
       alcohol: ['에스터 만들기 (알코올리시스)', [{ t: '첨가–제거', d: '메탄올이 붙고 Cl⁻ 가 떨어집니다. 피리딘이 HCl 을 잡습니다.' }], ['반응성: 산 염화물 > 산 무수물 > 에스터 ≈ 산 > 아마이드. 위에서 아래로만 쉽게 바뀝니다.'], []],
       ammonia: ['아마이드 만들기', [{ t: '첨가–제거', d: 'NH₃ 가 C=O 를 공격하고 이탈기가 떨어집니다. HCl 을 잡으려고 NH₃ 를 2당량 씁니다.' }], ['산 염화물 · 에스터 → 아마이드.'], [{ y: '현대', t: '의약품 · 펩타이드 합성에서는 산 염화물 대신 EDC · HATU 같은 커플링 시약으로 카복실산과 아민을 바로 잇습니다. 아마이드 결합 만들기는 제약 산업에서 가장 많이 하는 반응입니다.' }]],
       methylamine: ['N-메틸 아마이드', [{ t: '첨가–제거', d: 'CH₃NH₂ 가 공격합니다.' }], [], []],
       sapon: ['비누화 (염기 가수분해)', [{ t: 'OH⁻ 공격', d: 'OH⁻ 가 C=O 에 붙고 알콕사이드가 떨어집니다.' }, { t: '되돌릴 수 없음', d: '생긴 산이 곧바로 카복실레이트가 되어 평형이 오른쪽으로. 마지막에 H₃O⁺ 로 산.' }], ['생성물: 카복실산 + 알코올. 지방을 비누로 만드는 반응.'], []],
-      nitrileHyd: ['나이트릴 가수분해', [{ t: '아마이드 거쳐', d: '산 · 가열로 나이트릴 → 아마이드 → 카복실산 (+ NH₄⁺).' }], ['탄소 수가 하나 는 카복실산을 만드는 방법 (R–X + CN⁻ 다음).'], []],
+      nitrileHyd: ['나이트릴 가수분해', [{ t: '아마이드 거쳐', d: '산 · 가열로 나이트릴 → 아마이드 → 카복실산 (+ NH₄⁺).' }], ['R–X 에 CN⁻ 를 붙인 뒤 가수분해하면 탄소가 하나 늘어난 카복실산이 됩니다.'], []],
+      esterHyd: ['에스터 가수분해 (산 촉매, 평형)', [{ t: 'C=O 활성화', d: 'H⁺ 가 C=O 에 붙고 물이 공격합니다.' }, { t: '알코올 이탈', d: '사면체 중간체에서 알코올이 떨어집니다 — 피셔 에스터화를 거꾸로 돌린 것.' }], ['물을 많이 넣어야 평형이 산 · 알코올 쪽으로. 염기(비누화)는 되돌릴 수 없어 끝까지 갑니다.'], []],
       amideHyd: ['아마이드 가수분해', [{ t: '가장 느린 유도체', d: '아마이드는 공명으로 안정해 진한 산 · 오랜 가열이 필요합니다.' }], ['생성물: 카복실산 + 아민(암모니아).'], []]
     }[kind];
     return { mech: T[0], steps: T[1], select: T[2], modern: T[3], sites: sites.map(s => s.c), products: rolesByKey(prods, kind) };
@@ -540,9 +568,9 @@ function eas(kind) {
     const { info } = S;
     const { subs, free, top } = easPositions(mol, ring, info);
     if (!free.length) return none('벤젠 고리에 H 가 남아 있지 않습니다.');
-    const E = { Br2: 'Br', Cl2: 'Cl', HNO3: '[N+](=O)[O-]', FCacyl: 'C(C)=O', FCalk: 'C' }[kind];
+    const E = { Br2: 'Br', Cl2: 'Cl', HNO3: '[N+](=O)[O-]', FCacyl: 'C(C)=O', FCalk: 'C', FCpr: 'C(C)C' }[kind];
     const res = { products: [], steps: [], select: [], modern: [], sites: ring };
-    if ((kind === 'FCacyl' || kind === 'FCalk') && subs.some(x => x.d.w <= -2 || x.d.amine)) {
+    if ((kind === 'FCacyl' || kind === 'FCalk' || kind === 'FCpr') && subs.some(x => x.d.w <= -2 || x.d.amine)) {
       const bad = subs.find(x => x.d.w <= -2 || x.d.amine);
       return none(bad.d.amine ? '아미노기(–NH₂)의 비공유 전자쌍이 AlCl₃ 와 먼저 결합해 고리가 강하게 비활성화됩니다. 프리델–크래프츠 반응이 일어나지 않습니다.' : `고리에 ${bad.d.ko.split(' ')[0]} 같은 강한 비활성화기가 있으면 프리델–크래프츠 반응이 일어나지 않습니다.`, { mech: '반응 없음' });
     }
@@ -560,6 +588,20 @@ function eas(kind) {
       return res;
     }
     const best = free[0].score;
+    if (kind === 'FCpr') {
+      /* 1차 양이온 대신 1,2-수소화 이동한 2차 양이온 → 아이소프로필 (주), 프로필 (부) */
+      const f = free[0];
+      for (const [frag, role, tag] of [['C(C)C', 'major', '자리옮김'], ['CCC', 'minor', '자리옮김 없음']]) { const m = work(mol); graft(m, f.r, frag); res.products.push(product(finish(m)[0], role, { tag })); }
+      res.mech = '프리델–크래프츠 알킬화 (양이온 자리옮김)';
+      res.steps = [
+        { t: '양이온 만들기', d: 'AlCl₃ 가 CH₃CH₂CH₂Cl 의 Cl 을 끌어당겨 1차 탄소 양이온 성격의 착물이 됩니다.' },
+        { t: '1,2-수소화 이동', d: 'H 가 전자쌍과 함께 옮겨 가 더 안정한 2차 양이온 (CH₃)₂CH⁺.' },
+        { t: 'EAS', d: '벤젠 고리가 2차 양이온을 공격 → H⁺ 이탈 → 아이소프로필벤젠(큐멘)이 주생성물.' }
+      ];
+      res.select.push('곧은 사슬 알킬벤젠을 원하면 아실화(자리옮김 없음) 후 볼프–키시너 · 클레멘슨 환원을 씁니다.', '알킬기는 고리를 활성화해 여러 번 알킬화되기 쉽습니다 (벤젠을 과량으로).');
+      res.modern.push({ y: '현대', t: '큐멘(페놀 · 아세톤의 원료)은 이제 벤젠 + 프로펜을 제올라이트 촉매로 반응시켜 대량 생산합니다.' });
+      return res;
+    }
     const cands = free.filter(f => f.score >= best - 2.5).slice(0, 4);
     const seen = new Set();
     cands.forEach((f, i) => {
@@ -651,10 +693,10 @@ function radical(X) {
       steps: [
         { t: '개시', d: `빛(hν)이 ${X}₂ 를 두 ${X}· 로 쪼갭니다.` },
         { t: '전파', d: `${X}· 가 C–H 의 H 를 떼어 탄소 라디칼 → 라디칼이 ${X}₂ 에서 ${X} 를 떼고 ${X}· 를 되살립니다.` },
-        { t: '선택성 계산', d: `비율 = (그 종류 H 의 개수) × (상대 반응성). ${X === 'Cl' ? '염소화: 1차 : 2차 : 3차 = 1 : 3.8 : 5 (25 °C)' : '브로민화: 1차 : 2차 : 3차 = 1 : 82 : 1600'}.` }
+        { t: '선택성 계산', d: `비율 = (그 종류 H 의 개수) × (상대 반응성). ${X === 'Cl' ? '염소화: 1차 : 2차 : 3차 = 1 : 3.8 : 5.0 (25 °C)' : '브로민화: 1차 : 2차 : 3차 = 1 : 82 : 1600 (125 °C)'}.` }
       ],
       select: [X === 'Br' ? '브로민화는 선택성이 매우 커서 가장 치환된 C–H 가 거의 다 반응합니다 (하몬드 가설: 흡열 단계라 전이 상태가 라디칼과 닮음).' : '염소화는 빠르고 선택성이 작아 여러 생성물이 섞입니다.'],
-      modern: [{ y: '현대', t: '빛 촉매(광산화환원) · 금속 촉매 C–H 작용기화로, 특정 C–H 만 골라 바꾸는 방법이 2010년대 이후 크게 발전했습니다.' }]
+      modern: [{ y: '2008 · 현대', t: '2008년 맥밀런 · 윤(Yoon) · 스티븐슨이 가시광선과 Ru · Ir 착물로 라디칼을 순하게 만드는 광산화환원 촉매를 보고한 뒤, 특정 C–H 만 골라 바꾸는 C–H 작용기화(HAT 촉매 · 금속 촉매)가 크게 발전했습니다. 할로젠 기체 없이도 알케인의 C–H 를 선택적으로 바꿀 수 있습니다.' }]
     };
   };
 }
@@ -771,7 +813,7 @@ function dielsAlder(dp) {
         { t: 's-cis 다이엔', d: '다이엔이 두 이중결합이 같은 쪽을 향하는 s-cis 모양으로 돌아야 반응합니다.' },
         { t: '한 번에 두 결합', d: '다이엔 양 끝(C1 · C4)과 친다이엔체의 두 탄소 사이에 새 σ 결합 둘이 동시에 생기고, 가운데(C2=C3)에 새 π 결합 — 6원자 고리.' }
       ],
-      select: ['친다이엔체의 cis/trans 가 생성물에 그대로 (입체 특이적).', '엔도 규칙: 친다이엔체의 C=O 가 다이엔 아래쪽을 향하는 엔도 생성물이 주로 생깁니다.', ...(dp !== 'ethene' ? ['위치: 다이엔 C1 치환기 → "오쏘"(1,2), C2 치환기 → "파라"(1,4) 생성물이 주생성물.'] : ['에텐은 반응성이 낮아 높은 온도 · 압력이 필요합니다. C=O 같은 전자 끄는 기가 붙은 친다이엔체가 빠릅니다.'])],
+      select: ['친다이엔체의 cis/trans 가 생성물에 그대로 (입체 특이적).', '엔도 규칙: 고리 다이엔(사이클로펜타다이엔 등)과 C=O 가 붙은 친다이엔체에서는 C=O 가 다이엔 아래쪽을 향하는 엔도 생성물이 주로 생깁니다. 사슬 다이엔 · 단순 친다이엔체에서는 엔도 선택성이 작고, "이차 궤도 상호작용" 설명은 계산 연구에서 논쟁 중입니다.', ...(dp !== 'ethene' ? ['위치: 다이엔 C1 치환기 → "오쏘"(1,2), C2 치환기 → "파라"(1,4) 생성물이 주생성물.'] : ['에텐은 반응성이 낮아 높은 온도 · 압력이 필요합니다. C=O 같은 전자 끄는 기가 붙은 친다이엔체가 빠릅니다.'])],
       modern: [{ y: '2011', t: '자연에서 디엘스–알더 반응만 골라 촉매하는 효소(SpnF)가 처음 확인되었습니다 (Kim 외, Nature 2011). 이후 여러 "디엘스–알더레이스"가 발견되었습니다.' }]
     };
   };
@@ -839,17 +881,297 @@ function pathLen(mol, u, v) {
   return 99;
 }
 
+
+/* ═══ 브루스 · 스미스의 나머지 핵심 반응 ═══════════════════ */
+/* ── 에폭사이드 열기 ── */
+function openEpoxideAt(mol, ep, at, nu) {
+  const m = work(mol);
+  m.atoms[at].key = true;
+  cut(m, at, ep.o); m.atoms[ep.o].h += 1;
+  let nuAtom;
+  if (nu === 'H') { m.atoms[at].h += 1; m.atoms[at].nw = true; nuAtom = -1; }
+  else nuAtom = graft(m, at, nu, 1, false);
+  /* 뒤쪽 공격: 공격받은 탄소의 배열 반전 */
+  if (chiralOK(mol, at)) { const chi = mol.atoms[at].chi; m.atoms[at] = { ...m.atoms[at], chi: { n: chi.n.map(j => j === ep.o ? nuAtom : j), s: -chi.s } }; }
+  return finish(m)[0];
+}
+function epoxideOpen(kind) {
+  return (mol, S) => {
+    if (!S.epoxides.length) return none('에폭사이드(C–O–C 3원자 고리)가 없습니다. 알켄에 mCPBA 를 먼저 반응시켜 만들 수 있습니다.');
+    const ep = S.epoxides[0];
+    const acid = kind === 'h3o' || kind === 'meoh_h';
+    const nu = { h3o: 'O', meoh_h: 'OC', meo: 'OC', lah: 'H', grig: 'C' }[kind];
+    const sa = cationScore(mol, ep.a), sb = cationScore(mol, ep.b);
+    const [more, less] = sa >= sb ? [ep.a, ep.b] : [ep.b, ep.a];
+    const res = { products: [], steps: [], select: [], modern: [], sites: [ep.a, ep.b, ep.o] };
+    if (acid) {
+      const gap = Math.abs(sa - sb);
+      res.products.push(product(openEpoxideAt(mol, ep, more, nu), 'major', { tag: gap ? '치환 많은 쪽 공격' : '공격' }));
+      /* 2차 · 1차처럼 차이가 작으면 반대쪽도 섞인다 */
+      if (gap > 0 && gap <= 10) res.products.push(product(openEpoxideAt(mol, ep, less, nu), 'minor', { tag: '치환 적은 쪽 공격' }));
+      res.mech = '산 촉매 에폭사이드 열기 (SN1 성격의 SN2)';
+      res.steps = [
+        { t: '양성자 첨가', d: 'H⁺ 가 에폭사이드 O 에 붙어 좋은 이탈기가 됩니다. C–O 결합이 늘어나며 치환 많은 탄소가 양전하를 더 많이 떠안습니다.' },
+        { t: '뒤쪽 공격', d: `${kind === 'h3o' ? '물' : '메탄올'}이 양전하를 더 많이 가진 ${b('치환 많은 탄소')}를 O 의 반대편에서 공격 → 그 탄소의 배열이 뒤집힘 (anti).` }
+      ];
+    } else {
+      res.products.push(product(openEpoxideAt(mol, ep, less, nu), 'major', { tag: '치환 적은 쪽 공격' }));
+      res.mech = { meo: 'SN2 에폭사이드 열기 (염기)', lah: 'SN2 에폭사이드 열기 (H⁻)', grig: 'SN2 에폭사이드 열기 (C–C 결합)' }[kind];
+      res.steps = [
+        { t: 'SN2 공격', d: `${{ meo: 'CH₃O⁻', lah: 'H⁻ (LiAlH₄)', grig: 'CH₃⁻ (CH₃MgBr)' }[kind]} 가 입체 장애가 적은 ${b('치환 적은 탄소')}를 뒤쪽에서 공격합니다. 3원자 고리의 긴장(약 110 kJ/mol) 덕분에 보통은 나쁜 이탈기인 알콕사이드가 떨어질 수 있습니다.` },
+        { t: '양성자화', d: '산 처리로 알콕사이드 → OH.' }
+      ];
+      if (kind === 'grig') res.select.push('그리냐르 + 에폭사이드: 새 C–C 결합이 생기고 OH 까지 탄소 두 개가 늘어난 알코올이 됩니다.');
+      if (kind === 'lah') res.select.push('H⁻ 가 치환 적은 쪽에 붙으므로 OH 는 치환 많은 탄소에 남습니다 (마르코브니코프 방향의 알코올).');
+    }
+    res.select.unshift('위치: 산성 → 치환 많은 탄소 (양전하를 잘 견딤), 염기 · 강한 친핵체 → 치환 적은 탄소 (SN2, 입체 장애).', '입체: 공격받은 탄소의 배열 반전 → 두 치환기는 anti. 고리 에폭사이드에서는 trans-1,2-생성물.');
+    res.modern.push({ y: '1997 · 현대', t: '제이콥슨의 (salen)Co 촉매 가수분해 분할(HKR)은 라세미 말단 에폭사이드에서 한쪽 거울상만 물과 반응시켜 두 거울상을 나눕니다. 에폭사이드 열기는 베타 차단제 같은 의약품의 1,2-아미노알코올을 만드는 대표 반응입니다.' });
+    return res;
+  };
+}
+/* ── 에터 절단 (HI) ── */
+function etherCleave(mol, S) {
+  if (!S.ethers.length) return none('에터(C–O–C)가 없습니다. (에스터 · 에폭사이드는 여기서 다루지 않습니다.)');
+  const m = work(mol);
+  let any = false;
+  for (const { o, c1, c2 } of S.ethers) {
+    const arom = [c1, c2].map(c => mol.nb[c].some(n => mol.bonds[n.k].arom));
+    if (arom[0] && arom[1]) continue;
+    let k = 0;
+    for (const [c, ar] of [[c1, arom[0]], [c2, arom[1]]]) {
+      if (ar) continue;
+      cut(m, c, o); graft(m, c, 'I', 1, false); m.atoms[c].key = true; k++;
+    }
+    if (k === 2) m.atoms[o].dead = true; else m.atoms[o].h += k;
+    any = true;
+  }
+  if (!any) return none('다이아릴 에터는 C(방향족)–O 결합이 끊어지지 않습니다.', { mech: '반응 없음' });
+  const prods = finish(m).filter(p => p.atoms.length > 0);
+  return {
+    mech: '산성 에터 절단', sites: S.ethers.map(e => e.o), products: prods.map(p => product(p, 'major', { tag: 'HI' })),
+    steps: [
+      { t: '양성자 첨가', d: 'HI 가 에터 O 에 H⁺ 를 주어 좋은 이탈기(알코올)를 만듭니다.' },
+      { t: 'I⁻ 공격', d: '메틸 · 1차 쪽은 I⁻ 가 SN2 로, 3차 · 벤질 쪽은 먼저 양이온이 생기는 SN1 으로 끊어집니다.' },
+      { t: '두 번째 절단', d: 'HI 가 과량이면 생긴 알코올도 아이오딘화 알킬이 됩니다. 방향족 C–O 는 끊어지지 않아 페놀이 남습니다.' }
+    ],
+    select: ['산의 세기 · 친핵성: HI > HBr ≫ HCl. 에터는 염기 · 산화제 · 환원제에 안정해서 용매로 쓰이지만 진한 HI · HBr 에는 끊어집니다.'],
+    modern: [{ y: '현대', t: '아릴 메틸 에터(아니솔 류)의 메틸을 떼어 페놀로 만들 때는 BBr₃ 가 표준 시약입니다 (천연물 · 의약품 합성).' }]
+  };
+}
+/* ── 카보닐 첨가: 사이아노하이드린 · 아세탈 ── */
+function cyanohydrin(mol, S) {
+  const cs = S.carbonyls.filter(x => x.kind === 'aldehyde' || x.kind === 'ketone');
+  if (!cs.length) return none('알데하이드 · 케톤이 없습니다.');
+  const m = work(mol);
+  for (const { c, f } of cs) { const O = f.oxo[0]; setBond(m, c, O, 1); m.atoms[O].h = 1; graft(m, c, 'C#N', 1, false); m.atoms[c].key = true; }
+  return {
+    mech: '사이아노하이드린 생성 (친핵성 첨가)', sites: cs.map(x => x.c), products: rolesByKey(finish(m), 'HCN'),
+    steps: [{ t: 'CN⁻ 공격', d: '사이안화 이온이 C=O 탄소를 공격해 알콕사이드가 됩니다.' }, { t: '양성자화', d: 'HCN(또는 산)이 O⁻ 에 H⁺ 를 줍니다. 가역 반응이라 입체 장애가 큰 케톤은 평형이 덜 치우칩니다.' }],
+    select: ['새 입체중심은 평면 C=O 의 양쪽에서 공격받아 라세미.', '가수분해하면 α-하이드록시산, LiAlH₄ 로 환원하면 β-아미노알코올 — 탄소 하나를 늘리는 방법.'],
+    modern: [{ y: '현대', t: '하이드록시나이트릴 분해효소(HNL)로 한쪽 거울상 사이아노하이드린만 만드는 방법이 산업에 쓰이고, 실험실에서는 독성이 큰 HCN 대신 TMSCN 을 흔히 씁니다.' }]
+  };
+}
+function acetal(mol, S) {
+  const cs = S.carbonyls.filter(x => x.kind === 'aldehyde' || x.kind === 'ketone');
+  if (!cs.length) return none('알데하이드 · 케톤이 없습니다.');
+  const m = work(mol);
+  for (const { c, f } of cs) { const O = f.oxo[0]; m.atoms[O].dead = true; bondBetween(m, c, O).dead = true; graft(m, c, 'OC', 1, false); graft(m, c, 'OC', 1, false); m.atoms[c].key = true; }
+  return {
+    mech: '아세탈 생성 (산 촉매)', sites: cs.map(x => x.c), products: rolesByKey(finish(m), '아세탈'),
+    steps: [
+      { t: '헤미아세탈', d: '산 촉매로 CH₃OH 가 C=O 에 붙어 헤미아세탈(한 탄소에 OH 와 OCH₃).' },
+      { t: '옥소카베늄 이온', d: 'OH 가 양성자화되어 물로 빠지고, 이웃 O 의 비공유 전자쌍이 양전하를 받쳐 줍니다.' },
+      { t: '두 번째 CH₃OH', d: '두 번째 메탄올이 붙고 H⁺ 를 잃어 아세탈.' }
+    ],
+    select: ['가역 반응: 물을 빼면(딘–스타크 장치) 아세탈, 묽은 산 · 물을 넣으면 카보닐로 되돌아갑니다.', '아세탈은 염기 · 그리냐르 · LiAlH₄ 에 안정 → 카보닐의 보호기로 씁니다 (실제로는 에틸렌 글라이콜로 고리 아세탈을 주로 만듦).'],
+    modern: [{ y: '생화학', t: '포도당의 고리 모양은 분자 안 헤미아세탈이고, 녹말 · 셀룰로스의 당과 당 사이 결합(글라이코사이드 결합)이 바로 아세탈입니다.' }]
+  };
+}
+/* ── 바이어–빌리거 산화 ── */
+function baeyer(mol, S) {
+  const ks = S.carbonyls.filter(x => x.kind === 'ketone' || x.kind === 'aldehyde');
+  if (!ks.length) return none('케톤 · 알데하이드가 없습니다.');
+  const { c, kind } = ks[0];
+  const m = work(mol);
+  m.atoms[c].key = true;
+  if (kind === 'aldehyde') {
+    m.atoms[c].h -= 1; graft(m, c, 'O', 1, false);
+    return { mech: '바이어–빌리거 산화 (H 이동)', sites: [c], products: [product(finish(m)[0], 'major', { tag: '산화' })], steps: [{ t: 'H 이동', d: '알데하이드는 H 가 가장 잘 옮겨 가 카복실산이 됩니다.' }], select: ['이동 적성: H > 3차 > 2차 ≈ 페닐 > 1차 > 메틸.'], modern: [] };
+  }
+  const aryl = j => mol.nb[j].some(n => mol.bonds[n.k].arom);
+  const apt = j => aryl(j) ? 3.1 : Math.min(4, classOf(mol, j));
+  const groups = carbonNbrs(mol, c).sort((p, q) => apt(q) - apt(p));
+  const g = groups[0];
+  const o = graft(m, c, 'O', 1, false); m.atoms[o].h = 0;
+  cut(m, c, g); addBond(m, o, g, 1);
+  /* 옮겨 가는 탄소의 배열은 그대로 */
+  if (chiralOK(mol, g)) { const chi = mol.atoms[g].chi; m.atoms[g] = { ...m.atoms[g], chi: { n: chi.n.map(j => j === c ? o : j), s: chi.s } }; }
+  const lab = aryl(g) ? '페닐(아릴)' : ['', '메틸', '1차 알킬', '2차 알킬', '3차 알킬'][apt(g)];
+  return {
+    mech: '바이어–빌리거 산화 (케톤 → 에스터)', sites: [c, g], products: [product(finish(m)[0], 'major', { tag: '산화' })],
+    steps: [
+      { t: '크리기 중간체', d: '과산 mCPBA 가 C=O 탄소에 붙어 사면체 중간체(크리기 중간체)를 만듭니다.' },
+      { t: '1,2-이동', d: `카보닐 탄소의 치환기 하나(${lab})가 O–O 의 O 쪽으로 옮겨 가며 카복실산 음이온이 떨어집니다. 옮겨 가는 탄소의 배열은 유지됩니다.` }
+    ],
+    select: [`이동 적성: H > 3차 > 2차 ≈ 페닐 > 1차 > 메틸 — 여기서는 ${lab} 쪽에 O 가 끼어듭니다.`, '케톤 → 에스터, 고리 케톤 → 한 칸 큰 락톤(고리 에스터, 예: 사이클로헥산온 → ε-카프로락톤, 나일론 원료).'],
+    modern: [{ y: '현대', t: 'mCPBA 대신 과산화수소 + 루이스산, 또는 바이어–빌리거 모노옥시제네이스(BVMO) 효소로 폐기물을 줄이고 한쪽 거울상 락톤을 만듭니다.' }]
+  };
+}
+/* ── 길만 시약: 짝(1,4-) 첨가 · 산 염화물 → 케톤 ── */
+function gilman(mol, S) {
+  const m = work(mol);
+  if (S.enones.length) {
+    const e = S.enones[0];
+    setBond(m, e.alpha, e.beta, 1); m.atoms[e.alpha].h += 1; graft(m, e.beta, 'C', 1, false); m.atoms[e.beta].key = true;
+    return {
+      mech: '짝 첨가 (1,4-첨가)', sites: [e.co, e.alpha, e.beta], products: rolesByKey(finish(m), '길만'),
+      steps: [{ t: 'β 탄소 공격', d: '무른 탄소 친핵체 (CH₃)₂CuLi 는 C=O 탄소가 아니라 β 탄소를 공격해 엔올레이트를 만듭니다.' }, { t: '양성자화', d: '산 처리로 엔올레이트의 α 탄소에 H → 카보닐로 돌아옵니다.' }],
+      select: ['그리냐르 · 유기리튬(단단한 친핵체)은 C=O 에 직접(1,2-첨가), 길만 시약(무른 친핵체)은 β 탄소에(1,4-첨가) 붙습니다.', 'β 탄소가 새 입체중심이면 라세미.'],
+      modern: [{ y: '현대', t: '구리 · 로듐 촉매와 키랄 리간드로 한쪽 거울상만 만드는 비대칭 짝 첨가(예: 페링하의 Cu 촉매 그리냐르 짝 첨가)가 널리 쓰입니다.' }]
+    };
+  }
+  const ac = S.carbonyls.find(x => x.kind === 'acylhalide');
+  if (ac) {
+    const x = ac.f.halo[0]; m.atoms[x].dead = true; bondBetween(m, ac.c, x).dead = true; graft(m, ac.c, 'C', 1, false); m.atoms[ac.c].key = true;
+    return { mech: '아실 치환 (산 염화물 → 케톤)', sites: [ac.c], products: rolesByKey(finish(m), '길만'), steps: [{ t: '한 번만 치환', d: '길만 시약은 산 염화물의 Cl 만 바꾸고 케톤에서 멈춥니다. 그리냐르는 두 번 붙어 3차 알코올이 됩니다.' }], select: ['산 염화물 → 케톤 (탄소 하나 늘림).'], modern: [] };
+  }
+  return none('α,β-불포화 카보닐(C=C–C=O)이나 산 염화물이 없습니다. 길만 시약은 보통 케톤 · 알데하이드의 C=O 에는 잘 붙지 않습니다.');
+}
+/* ── α-탄소: 브로민화 · 할로폼 · LDA 알킬화 ── */
+function alphaBr(mol, S) {
+  if (!S.alphaCO.length) return none('C=O 옆 탄소(α)에 H 가 있는 알데하이드 · 케톤이 없습니다.');
+  const x = S.alphaCO[0];
+  const al = x.alphas.slice().sort((p, q) => mol.atoms[p].h - mol.atoms[q].h)[0];
+  const m = work(mol); graft(m, al, 'Br'); m.atoms[al].key = true;
+  return {
+    mech: '산 촉매 α-할로젠화 (엔올 경유)', sites: [x.c, al], products: rolesByKey(finish(m), 'α-Br'),
+    steps: [{ t: '엔올 (느린 단계)', d: '산 촉매로 케톤이 엔올이 됩니다. 이중결합이 더 치환된(더 안정한) 엔올이 더 많이 생깁니다.' }, { t: 'Br₂ 공격', d: '엔올의 C=C 가 Br₂ 를 공격 → α-브로모 카보닐 + HBr.' }],
+    select: ['산성에서는 한 번만 치환됩니다 (붙은 Br 이 다음 엔올 형성을 느리게 함). 속도는 [Br₂] 와 무관 — 엔올 형성이 속도 결정 단계.', '염기성에서는 할로젠이 붙을수록 α-H 가 더 산성이 되어 여러 번 치환 → 메틸 케톤은 할로폼 반응.'],
+    modern: [{ y: '현대', t: '유기 촉매(키랄 아민의 엔아민 경유)로 한쪽 거울상의 α-할로젠화 · α-작용기화를 하는 방법이 2000년대 이후 발전했습니다 (2021 노벨상 분야).' }]
+  };
+}
+function haloform(mol, S) {
+  if (!S.methylKetones.length) return none('메틸 케톤(CH₃–C(=O)–R)이 없습니다. 할로폼 반응은 메틸 케톤에서만 일어납니다.');
+  const { c } = S.methylKetones[0];
+  const me = carbonNbrs(mol, c).find(j => mol.atoms[j].h === 3);
+  const m = work(mol);
+  m.atoms[me].dead = true; bondBetween(m, c, me).dead = true; graft(m, c, 'O', 1, false); m.atoms[c].key = true;
+  const chi3 = parseSmiles('IC(I)I'); layout(chi3);
+  return {
+    mech: '할로폼 반응', sites: [c, me], products: [...rolesByKey(finish(m), '할로폼'), product(chi3, 'side', { tag: '노란 침전' })],
+    steps: [
+      { t: 'α-아이오딘화 3번', d: 'OH⁻ 가 α-H 를 떼고 I₂ 와 반응. I 가 붙을수록 남은 H 가 더 산성이라 CH₃ → CI₃ 까지 갑니다.' },
+      { t: 'C–C 절단', d: 'OH⁻ 가 C=O 를 공격하고 CI₃⁻ (전자 끄는 I 셋이 받쳐 주는 좋은 이탈기)가 떨어집니다.' },
+      { t: '산 처리', d: '카복실레이트 → 카복실산. CHI₃ (아이오도폼)는 노란 고체로 가라앉습니다.' }
+    ],
+    select: ['메틸 케톤 CH₃C(=O)R → RCOOH (탄소 하나 적음) + CHI₃.', '아이오도폼 시험: 노란 침전이면 메틸 케톤이나 CH₃CH(OH)– 알코올(먼저 산화됨)이 있다는 뜻.'],
+    modern: []
+  };
+}
+function ldaAlkyl(mol, S) {
+  const cand = S.carbonyls.filter(x => ['ketone', 'aldehyde', 'ester'].includes(x.kind)).map(x => ({ x, al: carbonNbrs(mol, x.c).filter(j => mol.atoms[j].h > 0 && mol.nb[j].every(n => n.o === 1) && !(x.kind === 'ester' && j === x.f.OR[0]?.c)) })).filter(y => y.al.length);
+  if (!cand.length) return none('α-H 가 있는 케톤 · 에스터가 없습니다.');
+  const { x, al } = cand[0];
+  const target = al.slice().sort((p, q) => mol.atoms[q].h - mol.atoms[p].h)[0];
+  const m = work(mol); graft(m, target, 'C'); m.atoms[target].key = true;
+  return {
+    mech: '엔올레이트 알킬화 (동역학적 조절)', sites: [x.c, target], products: rolesByKey(finish(m), 'LDA'),
+    steps: [
+      { t: '동역학적 엔올레이트', d: '−78 °C 에서 부피 큰 강염기 LDA (pKa 약 36)가 가려지지 않은(치환 적은) α 탄소의 H 를 빠르고 비가역적으로 떼어 엔올레이트로 모두 바꿉니다.' },
+      { t: 'SN2 알킬화', d: '엔올레이트의 α 탄소가 CH₃I 를 공격해 새 C–C 결합.' }
+    ],
+    select: ['동역학적(LDA, −78 °C) → 치환 적은 α 탄소, 열역학적(NaOEt 등 약한 염기 · 실온 · 평형) → 치환 많은 α 탄소.', 'SN2 이므로 할로젠화 알킬은 메틸 · 1차 · 벤질 · 알릴만 잘 됩니다.', ...(x.kind === 'aldehyde' ? ['알데하이드는 알돌 반응이 빨라 실제로는 엔아민(스토크)을 거쳐 알킬화합니다.'] : [])],
+    modern: [{ y: '현대', t: '키랄 보조기(에번스 옥사졸리디논) · 키랄 상 이동 촉매로 α 탄소에 한쪽 거울상만 알킬화합니다.' }]
+  };
+}
+/* ── 방향족: SNAr · 벤자인 · 다이아조늄 ── */
+function ringOf(mol, c) { const R = rings(mol); return R.of[c] >= 0 ? R.list[R.of[c]] : null; }
+function snar(mol, S) {
+  if (!S.arylHalides.length) return none('방향족 할로젠화물(벤젠 고리에 붙은 F · Cl · Br · I)이 없습니다.');
+  const act = S.arylHalides.find(({ c }) => {
+    const ring = ringOf(mol, c); if (!ring) return false;
+    const k = ring.indexOf(c), n = ring.length;
+    return ring.some((r, i) => { const d = Math.min(Math.abs(i - k), n - Math.abs(i - k)); return (d === 1 || d === 3) && mol.nb[r].some(nb => mol.atoms[nb.j].el === 'N' && mol.atoms[nb.j].q === 1); });
+  });
+  if (!act) return none('할로젠의 오쏘 · 파라에 NO₂ 같은 강한 전자 끄는 기가 없어 SNAr 가 일어나지 않습니다. 활성화기가 없는 할로젠화 아릴은 NaNH₂ (벤자인)를 보세요.', { mech: '반응 없음' });
+  const m = work(mol);
+  m.atoms[act.x].dead = true; bondBetween(m, act.c, act.x).dead = true; graft(m, act.c, 'OC', 1, false); m.atoms[act.c].key = true;
+  return {
+    mech: '친핵성 방향족 치환 (SNAr, 첨가–제거)', sites: [act.c, act.x], products: rolesByKey(finish(m), 'SNAr'),
+    steps: [
+      { t: '첨가 (느린 단계)', d: 'CH₃O⁻ 가 할로젠이 붙은 탄소를 공격 → 음전하가 고리와 오쏘 · 파라의 NO₂ 로 퍼진 마이젠하이머 착물.' },
+      { t: '제거', d: '할로젠화 이온이 떨어지며 방향족성이 돌아옵니다.' }
+    ],
+    select: ['NO₂ 가 할로젠의 오쏘 · 파라에 있어야 음전하를 받아 줍니다 (메타면 거의 안 됨). NO₂ 가 많을수록 빠름.', '이탈기 순서가 SN2 와 반대: F > Cl ≈ Br > I — 공격 단계가 느리고, F 가 탄소를 가장 양전하로 만들기 때문.'],
+    modern: [{ y: '2018', t: '교과서는 마이젠하이머 중간체를 거친다고 가르치지만, 동위원소 효과 측정과 계산으로 많은 SNAr 가 한 단계 협동 메커니즘임이 밝혀졌습니다 (Kwan · Jacobsen 외, Nature Chemistry 2018). 중간체가 뚜렷한 것은 NO₂ 가 여럿이고 이탈기가 F 인 경우처럼 강하게 활성화된 경우입니다.' }]
+  };
+}
+function benzyne(mol, S) {
+  const ah = S.arylHalides.find(({ x }) => ['Cl', 'Br', 'I'].includes(mol.atoms[x].el));
+  if (!ah) return none('벤젠 고리에 붙은 Cl · Br · I 가 없습니다.');
+  const ring = ringOf(mol, ah.c);
+  const orthos = mol.nb[ah.c].filter(n => ring.includes(n.j) && mol.atoms[n.j].h > 0).map(n => n.j);
+  if (!orthos.length) return none('할로젠 옆(오쏘) 탄소에 H 가 없어 벤자인이 생길 수 없습니다.', { mech: '반응 없음' });
+  const make = at => {
+    const m = work(mol);
+    m.atoms[ah.x].dead = true; bondBetween(m, ah.c, ah.x).dead = true;
+    if (at === ah.c) graft(m, at, 'N', 1, false);
+    else { m.atoms[ah.c].h += 1; graft(m, at, 'N'); }
+    m.atoms[at].key = true;
+    return finish(m)[0];
+  };
+  const list = [];
+  for (const o of orthos) { list.push({ at: ah.c, w: 0.5 / orthos.length }); list.push({ at: o, w: 0.5 / orthos.length }); }
+  const products = list.map(x => product(make(x.at), 'major', { pct: Math.round(x.w * 1000) / 10, tag: x.at === ah.c ? '원래 자리' : '옆 자리 (cine)' }));
+  return {
+    mech: '제거–첨가 (벤자인)', sites: [ah.c, ah.x, ...orthos], products,
+    steps: [
+      { t: '제거', d: 'NH₂⁻ 가 할로젠 옆(오쏘) H 를 떼고 X⁻ 가 빠지며 벤자인(고리 속의 휘어진 삼중결합)이 생깁니다.' },
+      { t: '첨가', d: 'NH₂⁻ 가 삼중결합의 어느 탄소에나 붙을 수 있어, NH₂ 가 원래 자리 또는 그 옆 자리에 들어갑니다.' }
+    ],
+    select: ['활성화기가 없는 할로젠화 아릴도 반응하는 대신 위치가 섞입니다 (비율은 대략의 값).', '¹⁴C 표지 클로로벤젠 실험(로버츠, 1953)으로 벤자인 중간체가 증명되었습니다.'],
+    modern: [{ y: '현대', t: '치환된 아린에서 친핵체가 어느 쪽에 붙는지는 "아린 왜곡 모델"(가그 · 호크)로 예측합니다. 요즘은 순한 조건(코바야시 전구체 + 플루오라이드)에서 아린을 만들어 합성에 적극적으로 씁니다.' }]
+  };
+}
+function sandmeyer(kind) {
+  return (mol, S) => {
+    if (!S.anilines.length) return none('벤젠 고리에 붙은 –NH₂ (아닐린)가 없습니다. 나이트로기를 먼저 환원해 만들 수 있습니다.');
+    const { n, c } = S.anilines[0];
+    const m = work(mol);
+    m.atoms[n].dead = true; bondBetween(m, c, n).dead = true;
+    const frag = { br: 'Br', cl: 'Cl', cn: 'C#N', oh: 'O', i: 'I', h: null }[kind];
+    if (frag) graft(m, c, frag, 1, false); else { m.atoms[c].h += 1; m.atoms[c].nw = true; }
+    m.atoms[c].key = true;
+    const second = {
+      br: 'Cu(I) 가 전자 하나를 주어 N₂ 가 빠지고 아릴 라디칼이 생긴 뒤, 구리에서 Br 을 받습니다 (산드마이어, 라디칼 메커니즘).',
+      cl: 'Cu(I) 가 전자 하나를 주어 N₂ 가 빠지고 아릴 라디칼이 생긴 뒤, 구리에서 Cl 을 받습니다 (산드마이어).',
+      cn: 'CuCN 으로 같은 라디칼 경로 → 벤조나이트릴. 가수분해하면 벤조산이 됩니다.',
+      oh: '물에서 가열하면 N₂ 가 빠지며 생긴 아릴 양이온에 물이 붙어 페놀.',
+      i: 'I⁻ 는 구리 없이도 다이아조늄과 반응해 아이오도벤젠.',
+      h: 'H₃PO₂ 가 H 를 주어 N₂ 자리가 H 로 → 방향 지시에 쓰려고 넣었던 NH₂ 를 없앨 때 씁니다.'
+    }[kind];
+    return {
+      mech: kind === 'h' ? '다이아조늄 환원 (탈아미노)' : kind === 'oh' || kind === 'i' ? '다이아조늄 치환' : '산드마이어 반응',
+      sites: [c, n], products: rolesByKey(finish(m), '다이아조늄'),
+      steps: [{ t: '다이아조화 (0–5 °C)', d: 'NaNO₂ + HCl 에서 생긴 NO⁺ 가 –NH₂ 와 반응해 아렌다이아조늄 이온 Ar–N₂⁺. 차갑게 두어야 분해되지 않습니다.' }, { t: 'N₂ 이탈 · 치환', d: second }],
+      select: ['N₂ 는 가장 좋은 이탈기 — NH₂ 를 Br · Cl · I · CN · OH · H 로 바꿀 수 있어, EAS 만으로는 만들기 어려운 치환 패턴(예: 1,3,5-트라이브로모벤젠)을 만듭니다.'],
+      modern: [{ y: '현대', t: '폭발 위험이 있는 다이아조늄염을 쌓아 두지 않도록 흐름 반응기(flow chemistry)에서 만들어 바로 쓰고, 구리를 촉매량만 쓰는 방법이 개발되었습니다.' }]
+    };
+  };
+}
+
 /* ── 목록 ────────────────────────────────────── */
 export const CATS = [
-  { id: 'sn', ko: '치환 · 제거', en: 'SN · E', sub: '할로젠화 알킬: SN1 · SN2 · E1 · E2' },
-  { id: 'alc', ko: '알코올', en: 'ALCOHOLS', sub: '할로젠화 · 탈수 · 산화 · 에터' },
-  { id: 'ene', ko: '알켄 첨가', en: 'ALKENES', sub: '마르코브니코프 · syn · anti · 절단' },
+  { id: 'sn', ko: '치환 · 제거', en: 'SN · E', sub: 'SN1 · SN2 · E1 · E2 · 안티 평면' },
+  { id: 'alc', ko: '알코올 · 에터', en: 'ALCOHOLS', sub: '할로젠화 · 탈수 · 산화 · 에폭사이드 · 에터 절단' },
+  { id: 'ene', ko: '알켄 첨가', en: 'ALKENES', sub: '마르코브니코프 · syn · anti · 고리 프로페인화 · 절단' },
   { id: 'yne', ko: '알카인', en: 'ALKYNES', sub: '환원 · 수화 · 알킬화' },
-  { id: 'co', ko: '카보닐', en: 'CARBONYL', sub: '환원 · 그리냐르 · 비티히' },
+  { id: 'co', ko: '카보닐', en: 'CARBONYL', sub: '환원 · 그리냐르 · 비티히 · 아세탈 · 짝 첨가' },
   { id: 'acyl', ko: '산 유도체', en: 'ACYL', sub: '첨가–제거 (친핵성 아실 치환)' },
-  { id: 'aro', ko: '방향족', en: 'AROMATIC', sub: '친전자성 치환 · 방향 지시' },
+  { id: 'alpha', ko: 'α-탄소', en: 'ENOLATES', sub: 'α-할로젠화 · 할로폼 · LDA · 알돌 · 클라이젠' },
+  { id: 'aro', ko: '방향족', en: 'AROMATIC', sub: 'EAS · SNAr · 벤자인 · 다이아조늄' },
   { id: 'rad', ko: '라디칼', en: 'RADICAL', sub: '선택성 계산' },
-  { id: 'cc', ko: 'C–C 결합', en: 'C–C BONDS', sub: '알돌 · 디엘스–알더 · Pd 짝지음 · 복분해' }
+  { id: 'cc', ko: 'C–C 결합', en: 'C–C BONDS', sub: '디엘스–알더 · Pd 짝지음 · 복분해' }
 ];
 export const REACTIONS = [
   { id: 'nai', cat: 'sn', label: 'NaI, 아세톤', note: '핀켈스타인', run: snE('NaI') },
@@ -867,10 +1189,17 @@ export const REACTIONS = [
   { id: 'pcc', cat: 'alc', label: 'PCC (또는 DMP)', note: '약한 산화', run: oxidize(false) },
   { id: 'jones', cat: 'alc', label: 'CrO₃, H₂SO₄, H₂O', note: '존스 · 강한 산화', run: oxidize(true) },
   { id: 'nah', cat: 'alc', label: '① NaH ② CH₃I', note: '윌리엄슨 에터', run: williamson },
+  { id: 'epo_h3o', cat: 'alc', label: 'H₂O, H₂SO₄ (에폭사이드)', note: '산 · anti 다이올', run: epoxideOpen('h3o'), can: S => S.epoxides.length },
+  { id: 'epo_meoh', cat: 'alc', label: 'CH₃OH, H₂SO₄ (에폭사이드)', note: '산 · 치환 많은 쪽', run: epoxideOpen('meoh_h'), can: S => S.epoxides.length },
+  { id: 'epo_meo', cat: 'alc', label: 'NaOCH₃, CH₃OH (에폭사이드)', note: '염기 · 치환 적은 쪽', run: epoxideOpen('meo'), can: S => S.epoxides.length },
+  { id: 'epo_lah', cat: 'alc', label: '① LiAlH₄ ② H₂O (에폭사이드)', note: 'H⁻ 는 치환 적은 쪽', run: epoxideOpen('lah'), can: S => S.epoxides.length },
+  { id: 'epo_grig', cat: 'alc', label: '① CH₃MgBr ② H₃O⁺ (에폭사이드)', note: 'C–C · 탄소 둘 늘리기', run: epoxideOpen('grig'), can: S => S.epoxides.length },
+  { id: 'hi', cat: 'alc', label: 'HI (과량), 가열', note: '에터 절단', run: etherCleave, can: S => S.ethers.length },
   { id: 'hbr', cat: 'ene', label: 'HBr', note: '마르코브니코프', run: addAlkene('HBr') },
   { id: 'hcl', cat: 'ene', label: 'HCl', note: '마르코브니코프', run: addAlkene('HCl') },
   { id: 'hbrroor', cat: 'ene', label: 'HBr, ROOR', note: '반마르코브니코프', run: addAlkene('HBrROOR') },
   { id: 'hydration', cat: 'ene', label: 'H₂O, H₂SO₄', note: '수화 · 자리옮김 가능', run: addAlkene('H2O') },
+  { id: 'ene_meoh', cat: 'ene', label: 'CH₃OH, H₂SO₄', note: '에터 (마르코브니코프)', run: addAlkene('MeOH') },
   { id: 'oxymerc', cat: 'ene', label: '① Hg(OAc)₂, H₂O ② NaBH₄', note: '마르코브니코프, 자리옮김 없음', run: addAlkene('oxymerc') },
   { id: 'hydrobor', cat: 'ene', label: '① BH₃·THF ② H₂O₂, NaOH', note: '반마르코브니코프 · syn', run: addAlkene('hydrobor') },
   { id: 'br2', cat: 'ene', label: 'Br₂, CH₂Cl₂', note: 'anti 첨가', run: addAlkene('Br2') },
@@ -878,6 +1207,7 @@ export const REACTIONS = [
   { id: 'halohydrin', cat: 'ene', label: 'Br₂, H₂O', note: '할로하이드린', run: addAlkene('halohydrin') },
   { id: 'h2pd', cat: 'ene', label: 'H₂, Pd/C', note: '수소화 · syn', run: addAlkene('H2') },
   { id: 'mcpba', cat: 'ene', label: 'mCPBA', note: '에폭시화', run: addAlkene('epox') },
+  { id: 'simmons', cat: 'ene', label: 'CH₂I₂, Zn(Cu)', note: '시먼스–스미스 (syn)', run: addAlkene('simmons') },
   { id: 'oso4', cat: 'ene', label: 'OsO₄ (촉매), NMO', note: 'syn 다이올', run: addAlkene('OsO4') },
   { id: 'o3', cat: 'ene', label: '① O₃ ② (CH₃)₂S', note: '오존 분해', run: addAlkene('ozone') },
   { id: 'yne_h2', cat: 'yne', label: 'H₂ (2당량), Pd/C', note: '알케인까지', run: alkyne('H2') },
@@ -895,6 +1225,10 @@ export const REACTIONS = [
   { id: 'mget', cat: 'co', label: '① CH₃CH₂MgBr ② H₃O⁺', note: '그리냐르', run: grignard('CC', 'CH₃CH₂MgBr') },
   { id: 'mgph', cat: 'co', label: '① C₆H₅MgBr ② H₃O⁺', note: '그리냐르', run: grignard('c1ccccc1', 'C₆H₅MgBr') },
   { id: 'wittig', cat: 'co', label: 'Ph₃P=CH₂', note: '비티히', run: wittig },
+  { id: 'hcn', cat: 'co', label: 'NaCN, HCl', note: '사이아노하이드린', run: cyanohydrin, can: S => S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone') },
+  { id: 'acetal', cat: 'co', label: 'CH₃OH (과량), H⁺, −H₂O', note: '아세탈 · 보호기', run: acetal, can: S => S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone') },
+  { id: 'bv', cat: 'co', label: 'mCPBA (케톤)', note: '바이어–빌리거', run: baeyer, can: S => S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone') },
+  { id: 'gilman', cat: 'co', label: '① (CH₃)₂CuLi ② H₃O⁺', note: '길만 · 1,4-첨가', run: gilman, can: S => S.enones.length || S.carbonyls.some(c => c.kind === 'acylhalide') },
   { id: 'fischer', cat: 'acyl', label: 'CH₃OH, H₂SO₄', note: '피셔 에스터화', run: acyl('fischer') },
   { id: 'socl2_acid', cat: 'acyl', label: 'SOCl₂', note: '산 → 산 염화물', run: acyl('socl2') },
   { id: 'acyl_h2o', cat: 'acyl', label: 'H₂O', note: '산 염화물 가수분해', run: acyl('water') },
@@ -902,6 +1236,7 @@ export const REACTIONS = [
   { id: 'acyl_nh3', cat: 'acyl', label: 'NH₃', note: '→ 아마이드', run: acyl('ammonia') },
   { id: 'acyl_mena', cat: 'acyl', label: 'CH₃NH₂', note: '→ N-메틸 아마이드', run: acyl('methylamine') },
   { id: 'sapon', cat: 'acyl', label: '① NaOH, H₂O ② H₃O⁺', note: '비누화', run: acyl('sapon') },
+  { id: 'ester_hyd', cat: 'acyl', label: 'H₃O⁺, 가열 (에스터)', note: '산 가수분해 · 평형', run: acyl('esterHyd'), can: S => S.carbonyls.some(c => c.kind === 'ester') },
   { id: 'nitrile_hyd', cat: 'acyl', label: 'H₃O⁺, 가열', note: '나이트릴 → 산', run: acyl('nitrileHyd') },
   { id: 'amide_hyd', cat: 'acyl', label: 'H₃O⁺, 오래 가열', note: '아마이드 → 산', run: acyl('amideHyd') },
   { id: 'br2fe', cat: 'aro', label: 'Br₂, FeBr₃', note: '브로민화', run: eas('Br2') },
@@ -909,14 +1244,25 @@ export const REACTIONS = [
   { id: 'hno3', cat: 'aro', label: 'HNO₃, H₂SO₄', note: '나이트로화', run: eas('HNO3') },
   { id: 'fcacyl', cat: 'aro', label: 'CH₃COCl, AlCl₃', note: '프리델–크래프츠 아실화', run: eas('FCacyl') },
   { id: 'fcalk', cat: 'aro', label: 'CH₃Cl, AlCl₃', note: '프리델–크래프츠 알킬화', run: eas('FCalk') },
+  { id: 'fcpr', cat: 'aro', label: 'CH₃CH₂CH₂Cl, AlCl₃', note: '알킬화 · 양이온 자리옮김', run: eas('FCpr') },
+  { id: 'snar', cat: 'aro', label: 'NaOCH₃, CH₃OH, 가열', note: 'SNAr (NO₂ 활성화)', run: snar, can: S => S.arylHalides.length },
+  { id: 'benzyne', cat: 'aro', label: 'NaNH₂, NH₃(l)', note: '벤자인 (제거–첨가)', run: benzyne, can: S => S.arylHalides.length },
+  { id: 'sand_br', cat: 'aro', label: '① NaNO₂, HCl ② CuBr', note: '산드마이어 → Br', run: sandmeyer('br'), can: S => S.anilines.length },
+  { id: 'sand_cn', cat: 'aro', label: '① NaNO₂, HCl ② CuCN', note: '산드마이어 → CN', run: sandmeyer('cn'), can: S => S.anilines.length },
+  { id: 'sand_oh', cat: 'aro', label: '① NaNO₂, H₂SO₄ ② H₂O, 가열', note: '다이아조늄 → 페놀', run: sandmeyer('oh'), can: S => S.anilines.length },
+  { id: 'sand_i', cat: 'aro', label: '① NaNO₂, HCl ② KI', note: '다이아조늄 → I', run: sandmeyer('i'), can: S => S.anilines.length },
+  { id: 'sand_h', cat: 'aro', label: '① NaNO₂, HCl ② H₃PO₂', note: 'NH₂ 떼기', run: sandmeyer('h'), can: S => S.anilines.length },
   { id: 'nitrored', cat: 'aro', label: 'H₂, Pd/C (또는 Fe, HCl)', note: 'NO₂ → NH₂', run: aromaticMisc('nitroRed') },
   { id: 'kmno4', cat: 'aro', label: 'KMnO₄, 가열', note: '곁사슬 → COOH', run: aromaticMisc('sideOx') },
   { id: 'nbs', cat: 'aro', label: 'NBS, hν', note: '벤질 · 알릴 브로민화', run: aromaticMisc('NBS') },
   { id: 'cl2hv', cat: 'rad', label: 'Cl₂, hν', note: '비율 계산', run: radical('Cl') },
   { id: 'br2hv', cat: 'rad', label: 'Br₂, hν', note: '비율 계산', run: radical('Br') },
-  { id: 'aldol', cat: 'cc', label: 'NaOH, H₂O (5 °C)', note: '알돌 첨가', run: aldol(false) },
-  { id: 'aldolheat', cat: 'cc', label: 'NaOH, H₂O, 가열', note: '알돌 축합', run: aldol(true) },
-  { id: 'claisen', cat: 'cc', label: '① NaOCH₂CH₃ ② H₃O⁺', note: '클라이젠 축합', run: claisen },
+  { id: 'alpha_br', cat: 'alpha', label: 'Br₂, CH₃COOH', note: 'α-브로민화 (산)', run: alphaBr, can: S => S.alphaCO.length },
+  { id: 'haloform', cat: 'alpha', label: '① I₂ (과량), NaOH ② H₃O⁺', note: '할로폼 (메틸 케톤)', run: haloform, can: S => S.methylKetones.length },
+  { id: 'lda', cat: 'alpha', label: '① LDA, THF, −78 °C ② CH₃I', note: '동역학적 알킬화', run: ldaAlkyl, can: S => S.alphaCO.length || S.carbonyls.some(c => c.kind === 'ester') },
+  { id: 'aldol', cat: 'alpha', label: 'NaOH, H₂O (5 °C)', note: '알돌 첨가', run: aldol(false), can: S => S.alphaCO.length },
+  { id: 'aldolheat', cat: 'alpha', label: 'NaOH, H₂O, 가열', note: '알돌 축합', run: aldol(true), can: S => S.alphaCO.length },
+  { id: 'claisen', cat: 'alpha', label: '① NaOCH₂CH₃ ② H₃O⁺', note: '클라이젠 축합', run: claisen, can: S => S.carbonyls.some(c => c.kind === 'ester') },
   { id: 'da_eth', cat: 'cc', label: '+ CH₂=CH₂, 가열', note: '디엘스–알더', run: dielsAlder('ethene') },
   { id: 'da_acr', cat: 'cc', label: '+ CH₂=CHCOOCH₃', note: '디엘스–알더', run: dielsAlder('acrylate') },
   { id: 'da_ald', cat: 'cc', label: '+ CH₂=CHCHO', note: '디엘스–알더', run: dielsAlder('acrolein') },
@@ -969,6 +1315,7 @@ function stereoNotes(mol, res) {
     const def = n.rs ? n.rs.size : 0, undef = n.undef ? n.undef.length : 0;
     if (p.rac && def && !undef) {
       if (n.meso) p.stereoTag = '메소 (거울면이 있어 광학 비활성)';
+      else if (n.relName && n.relName.kind === 'ring') p.stereoTag = `(±)-${n.relName.en} — 거울상 둘이 1:1 (라세미)`;
       else if (n.mirror) { p.stereoTag = '(±) 라세미 — 거울상과 1:1'; p.mirrorName = n.mirror; }
     } else if (undef && !def) p.stereoTag = undef === 1 ? '* 라세미 — R 과 S 가 1:1' : '* R · S 가 섞인 혼합물';
     else if (undef && def) p.stereoTag = '* 새 입체중심은 두 배열이 섞임 (부분입체이성질체 혼합물)';
@@ -982,14 +1329,27 @@ export function applicable(mol, S = scan(mol)) {
   const has = {
     sn: S.halides.length > 0, alc: S.alcohols.length + S.phenols.length > 0, ene: S.alkenes.length > 0, yne: S.alkynes.length > 0,
     co: S.carbonyls.length > 0, acyl: S.carbonyls.some(c => ['acid', 'acylhalide', 'ester', 'nitrile', 'amide'].includes(c.kind)), aro: S.arenes.length > 0,
-    rad: mol.atoms.every(a => a.el === 'C') && mol.bonds.every(b2 => b2.o === 1)
+    rad: mol.atoms.every(a => a.el === 'C') && mol.bonds.every(b2 => b2.o === 1),
+    alpha: S.alphaCO.length > 0
   };
   const map = {};
   for (const r of REACTIONS) {
-    let ok = has[r.cat];
+    let ok = r.can ? r.can(S, mol) : has[r.cat];
     if (r.id === 'nitrored') ok = S.nitro.length > 0;
     if (r.id === 'nbs') ok = S.benzylic.length > 0 || S.alkenes.length > 0;
-    if (r.cat === 'cc') ok = r.id.startsWith('aldol') ? S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone') : r.id === 'claisen' ? S.carbonyls.some(c => c.kind === 'ester') : r.id.startsWith('da') ? S.alkenes.length >= 2 : r.id === 'grubbs' ? S.alkenes.length > 0 : r.id === 'suzuki' ? S.arylHalides.length + S.vinylHalides.length > 0 : S.arylHalides.length > 0;
+    if (r.cat === 'cc') ok = r.id.startsWith('da') ? S.alkenes.length >= 2 : r.id === 'grubbs' ? S.alkenes.length > 0 : r.id === 'suzuki' ? S.arylHalides.length + S.vinylHalides.length > 0 : S.arylHalides.length > 0;
+    if (['pcc', 'jones'].includes(r.id)) ok = S.alcohols.some(a => a.cls <= 2 && mol.atoms[a.c].h > 0) || (r.id === 'jones' && S.carbonyls.some(c => c.kind === 'aldehyde'));
+    if (['hbr_alc', 'pbr3', 'socl2', 'h2so4'].includes(r.id)) ok = S.alcohols.length > 0;
+    if (['nabh4', 'wk'].includes(r.id)) ok = S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone');
+    if (r.id === 'dibal') ok = S.carbonyls.some(c => c.kind === 'ester' || c.kind === 'nitrile');
+    if (r.id === 'wittig') ok = S.carbonyls.some(c => c.kind === 'aldehyde' || c.kind === 'ketone');
+    if (['fischer', 'socl2_acid'].includes(r.id)) ok = S.carbonyls.some(c => c.kind === 'acid');
+    if (['acyl_h2o', 'acyl_meoh', 'acyl_mena'].includes(r.id)) ok = S.carbonyls.some(c => c.kind === 'acylhalide');
+    if (r.id === 'acyl_nh3') ok = S.carbonyls.some(c => c.kind === 'acylhalide' || c.kind === 'ester');
+    if (r.id === 'sapon') ok = S.carbonyls.some(c => c.kind === 'ester');
+    if (r.id === 'nitrile_hyd') ok = S.carbonyls.some(c => c.kind === 'nitrile');
+    if (r.id === 'amide_hyd') ok = S.carbonyls.some(c => c.kind === 'amide');
+    if (r.id === 'kmno4') ok = S.benzylic.length > 0;
     if (['mgme', 'mget', 'mgph'].includes(r.id)) ok = S.carbonyls.length > 0;
     map[r.id] = !!ok;
   }

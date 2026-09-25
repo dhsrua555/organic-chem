@@ -47,7 +47,9 @@ export function mount(root, app) {
           <ul><li>같은 치환기가 여럿이면 di · tri · tetra (다이 · 트라이 · 테트라) — 알파벳 순서를 따질 때는 무시</li><li>치환기 안에 또 치환기가 있으면 괄호: 2-(hydroxymethyl)</li><li>번호와 글자 사이는 하이픈, 번호끼리는 쉼표</li></ul>
           <p>오른쪽: <b>b</b>romo 가 <b>c</b>hloro 보다 앞. 번호 묶음 {1,2} 는 어느 쪽에서 세어도 같아 <code>2-bromo-1-chloropropane</code>.</p>`, pre)}
         ${step(5, 'STEREO', '입체 표시 (E/Z · R/S)', `<p><b>E/Z</b> — 이중결합은 돌지 않아서 치환기 배치가 고정됩니다. 양 끝에서 CIP 우선순위가 높은 치환기끼리</p>
-          <ul><li>같은 쪽이면 <b>Z</b> (zusammen, 함께), 반대쪽이면 <b>E</b> (entgegen, 반대)</li></ul>
+          <ul><li>같은 쪽이면 <b>Z</b> (zusammen, 함께), 반대쪽이면 <b>E</b> (entgegen, 반대)</li>
+          <li>양쪽 탄소에 H 가 하나씩 있으면 <b>Z = cis</b>, <b>E = trans</b> 로 불러도 같습니다 (<code>cis-but-2-ene</code>). 치환기가 셋 이상이면 cis/trans 는 모호해서 E/Z 만 씁니다</li>
+          <li>고리: 두 탄소에 치환기가 하나씩이면 고리의 같은 면 <b>cis</b>, 반대 면 <b>trans</b>. 고리는 돌 수 없어 서로 다른 화합물입니다. 1,4-이치환 사이클로헥세인처럼 R/S 가 없는 경우는 이름 앞에 <code>cis-</code> · <code>trans-</code></li></ul>
           <p><b>R/S</b> — 치환기 넷이 모두 다른 탄소(입체중심)는 거울상 두 가지가 있습니다.</p>
           <ul><li>CIP 순위: 붙은 원자의 원자번호가 큰 것이 ① (O > N > C > H). 같으면 그다음 원자들을 큰 것부터 비교, 이중결합의 원자는 두 번 셉니다</li>
           <li>가장 낮은 ④ (보통 H) 를 뒤로 보내고 ① → ② → ③ 이 시계 방향이면 <b>R</b>, 반대면 <b>S</b></li>

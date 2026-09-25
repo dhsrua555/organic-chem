@@ -36,13 +36,16 @@ export function startFx({ reduce }) {
   document.addEventListener('pointerleave', () => { ret.style.opacity = '0'; seen = false; });
   window.addEventListener('pointerdown', () => { ret.classList.add('press'); }, { passive: true });
   window.addEventListener('pointerup', () => { ret.classList.remove('press'); }, { passive: true });
+  let lastT = '';
   const tick = now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const k = 1 - Math.pow(0.0005, dt);
     x += (tx - x) * k; y += (ty - y) * k;
     big += (bigT - big) * Math.min(1, dt * 12);
     const s = 1 + big * 0.6;
-    ret.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${s.toFixed(3)}) rotate(${(big * 30).toFixed(1)}deg)`;
+    /* 멈춰 있으면 스타일을 다시 쓰지 않는다 */
+    const t = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${s.toFixed(2)}) rotate(${(big * 30).toFixed(0)}deg)`;
+    if (t !== lastT) { ret.style.transform = t; lastT = t; }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

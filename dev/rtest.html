@@ -6,6 +6,7 @@
 import { parseSmiles } from '../js/chem/core.js';
 import { layout } from '../js/chem/layout.js';
 import { predict } from '../js/chem/reactions.js';
+import { defineMissing } from '../js/chem/stereo.js';
 
 /* [기질 SMILES, 반응 id, 주생성물 이름들('|' 로 여럿), 부생성물 이름들 | 'none' = 반응 없음] */
 const CASES = [
@@ -46,13 +47,33 @@ const CASES = [
   ['C/C=C/C', 'br2', '(2R,3S)-2,3-dibromobutane'], ['C/C=C\\C', 'br2', '(2R,3R)-2,3-dibromobutane~(2S,3S)-2,3-dibromobutane'],
   ['C1=CCCCC1', 'oso4', '(1R,2S)-cyclohexane-1,2-diol'], ['C/C=C/C', 'oso4', '(2R,3R)-butane-2,3-diol~(2S,3S)-butane-2,3-diol'],
   ['C/C=C\\C', 'mcpba', '(2R,3S)-2,3-dimethyloxirane'], ['CC1=CCCCC1', 'hydrobor', '(1R,2R)-2-methylcyclohexan-1-ol~(1S,2S)-2-methylcyclohexan-1-ol'],
-  ['CC=C', 'halohydrin', '1-bromopropan-2-ol'], ['C[C@@H](Br)CCC=C', 'hbr', '(2R)-2,5-dibromohexane~(2R,5S)-2,5-dibromohexane~2,5-dibromohexane']
+  ['CC=C', 'halohydrin', '1-bromopropan-2-ol'], ['C[C@@H](Br)CCC=C', 'hbr', '(2R)-2,5-dibromohexane~(2R,5S)-2,5-dibromohexane~2,5-dibromohexane'],
+  /* ── E2 안티 평면 (RDKit 3D 로 따로 확인) · trans-다이축 ── */
+  ['C[C@H](Br)[C@@H](C)CC', 'naome', '(E)-3-methylpent-2-ene'], ['C[C@H](Br)[C@H](C)CC', 'naome', '(Z)-3-methylpent-2-ene'],
+  ['Br[C@@H](c1ccccc1)[C@H](Br)c1ccccc1', 'naome', '[(E)-2-bromo-2-phenylethenyl]benzene'], ['Br[C@@H](c1ccccc1)[C@@H](Br)c1ccccc1', 'naome', '[(Z)-2-bromo-2-phenylethenyl]benzene'],
+  ['C[C@@H]1CCCC[C@H]1Br', 'naome', '(R)-3-methylcyclohex-1-ene~(S)-3-methylcyclohex-1-ene'], ['C[C@@H]1CCCC[C@@H]1Br', 'naome', '1-methylcyclohex-1-ene'],
+  ['CC(C)[C@@H]1CC[C@@H](C)C[C@H]1Cl', 'naome', '(3R,6S)-3-methyl-6-(propan-2-yl)cyclohex-1-ene'], ['CC(C)[C@@H]1CC[C@@H](C)C[C@@H]1Cl', 'naome', '(R)-4-methyl-1-(propan-2-yl)cyclohex-1-ene'],
+  /* ── 에폭사이드 · 에터 ── */
+  ['CC1(C)CO1', 'epo_meoh', '2-methoxy-2-methylpropan-1-ol'], ['CC1(C)CO1', 'epo_meo', '1-methoxy-2-methylpropan-2-ol'], ['CC1CO1', 'epo_lah', 'propan-2-ol'],
+  ['C[C@@H]1O[C@@H]1C', 'epo_h3o', '(2R,3R)-butane-2,3-diol~(2S,3S)-butane-2,3-diol'], ['CC1CO1', 'epo_grig', 'butan-2-ol~(R)-butan-2-ol~(S)-butan-2-ol'],
+  ['COc1ccccc1', 'hi', 'phenol|iodomethane'], ['CC(C)(C)OC', 'hi', '2-iodo-2-methylpropane|iodomethane'],
+  /* ── 알켄 · 카보닐 ── */
+  ['CC=C', 'ene_meoh', '2-methoxypropane'], ['C/C=C\\C', 'simmons', '(1R,2S)-1,2-dimethylcyclopropane'], ['C/C=C/C', 'simmons', '(1R,2R)-1,2-dimethylcyclopropane~(1S,2S)-1,2-dimethylcyclopropane'],
+  ['CCC=O', 'hcn', '2-hydroxybutanenitrile'], ['CC(C)=O', 'acetal', '2,2-dimethoxypropane'], ['CC(=O)c1ccccc1', 'bv', 'phenyl ethanoate'], ['CC(=O)C(C)(C)C', 'bv', 'tert-butyl ethanoate'],
+  ['CCC(C)=O', 'bv', 'ethyl ethanoate'], ['CC=CC(C)=O', 'gilman', '4-methylpentan-2-one'], ['CC(=O)Cl', 'gilman', 'propan-2-one'], ['CCC(C)=O', 'gilman', 'none'],
+  ['CC(=O)OCC', 'ester_hyd', 'ethanoic acid', 'ethanol'],
+  /* ── α-탄소 ── */
+  ['CC(=O)CC', 'alpha_br', '3-bromobutan-2-one'], ['CC(=O)c1ccccc1', 'haloform', 'benzoic acid', 'triiodomethane'], ['CC(=O)CC', 'lda', 'pentan-3-one'], ['CC(C)C(C)=O', 'lda', '2-methylpentan-3-one'],
+  /* ── 방향족 ── */
+  ['c1ccccc1', 'fcpr', '(propan-2-yl)benzene', 'propylbenzene'], ['Clc1ccc(cc1)[N+](=O)[O-]', 'snar', '1-methoxy-4-nitrobenzene'], ['Clc1ccccc1', 'snar', 'none'],
+  ['Cc1ccc(Cl)cc1', 'benzyne', '4-methylaniline|3-methylaniline'], ['Cc1ccccc1Cl', 'benzyne', '2-methylaniline|3-methylaniline'], ['Nc1ccccc1', 'sand_br', 'bromobenzene'],
+  ['Nc1ccc(C)cc1', 'sand_cn', '4-methylbenzonitrile'], ['Nc1ccccc1', 'sand_oh', 'phenol'], ['Nc1ccccc1', 'sand_i', 'iodobenzene'], ['Nc1ccc(Br)cc1', 'sand_h', 'bromobenzene']
 ];
 const out = [];
 let pass = 0, fail = 0;
 for (const [smi, id, major, minor] of CASES) {
   let res;
-  try { const m = parseSmiles(smi); layout(m); res = predict(m, id); }
+  try { let m = parseSmiles(smi); layout(m); if (smi.includes('@')) m = defineMissing(m); res = predict(m, id); }
   catch (e) { out.push(`CRASH ${smi} + ${id}: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`); fail++; continue; }
   const names = res.products.map(p => `${p.role}:${p.name ? p.name.nameEn : '?' + p.err}${p.pct ? ' ' + p.pct + '%' : ''}`);
   let ok;

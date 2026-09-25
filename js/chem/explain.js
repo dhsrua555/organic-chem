@@ -172,8 +172,14 @@ export function diff(prevMol, prev, mol, cur) {
   /* 입체: 새로 생긴 입체중심 · 뒤집힌 배열 · 새 E/Z */
   const ezOf = r => (r.stereo || '').split(',').filter(x => /[EZ]$/.test(x)).join(',');
   if (!ezOf(prev) && ezOf(cur)) out.push(`이중결합 양쪽 치환기가 달라져 ${b('(' + ezOf(cur) + ')')} 표시가 붙습니다.`);
+  /* 고리 cis/trans 바뀜 */
+  const ctKey = r => (r.ct || []).map(x => x.atoms.join('-') + x.rel).join();
+  if ((prev.ct || []).length && ctKey(prev) !== ctKey(cur)) {
+    const moved = (cur.ct || []).filter(x => (prev.ct || []).some(y => y.atoms.join() === x.atoms.join() && y.rel !== x.rel));
+    if (moved.length) out.push(`고리 위 두 치환기의 관계가 바뀌었습니다: ${moved.map(x => b((x.rel === 'cis' ? 'trans → cis' : 'cis → trans'))).join(', ')}.`);
+  } else if (!(prev.ct || []).length && (cur.ct || []).length) out.push(`고리에 치환기가 둘이 되어 ${b('cis / trans')} 두 가지가 생겼습니다 → 지금은 ${b(cur.ct[0].rel)}.`);
   const pc = new Set(prev.centers || []), newC = (cur.centers || []).filter(c => !pc.has(c));
-  if (newC.length && cur.rs) out.push(`치환기 넷이 모두 다른 탄소가 새로 생겨 입체중심이 되었습니다 → ${newC.map(c => (cur.locLabel && cur.locLabel.get(c) ? 'C' + cur.locLabel.get(c) : '원자 ' + (c + 1)) + ' ' + b(cur.rs.get(c) || '*')).join(', ')}. 붙인 조각을 쐐기(앞)로 그렸고, R/S 도구로 뒤집을 수 있습니다.`);
+  if (newC.length && cur.rs) out.push(`치환기 넷이 모두 다른 탄소가 새로 생겨 입체중심이 되었습니다 → ${newC.map(c => (cur.locLabel && cur.locLabel.get(c) ? 'C' + cur.locLabel.get(c) : '원자 ' + (c + 1)) + ' ' + b(cur.rs.get(c) || '*')).join(', ')}. 쐐기(앞으로 나온 결합)로 배열을 정해 두었고, R/S 도구로 뒤집을 수 있습니다.`);
   if (prev.rs && cur.rs) {
     const flippedC = [...cur.rs].filter(([c, d]) => prev.rs.has(c) && prev.rs.get(c) !== d && prevMol.atoms[c] && mol.atoms[c] && prevMol.atoms[c].chi && mol.atoms[c].chi && prevMol.atoms[c].chi.s !== mol.atoms[c].chi.s);
     if (flippedC.length) out.push(`입체중심의 배열을 거울상으로 뒤집었습니다: ${flippedC.map(([c, d]) => `${b(prev.rs.get(c) + ' → ' + d)}`).join(', ')}.`);

@@ -93,7 +93,11 @@ const CASES = [
   ['CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', '(S)-2-[4-(2-methylpropyl)phenyl]propanoic acid'], ['C/C=C/[C@@H](C)O', '(2R,3E)-pent-3-en-2-ol', '(2R,3E)-펜트-3-엔-2-올'],
   ['C[C@@H](c1ccccc1)NC(C)=O', 'N-[(S)-1-phenylethyl]ethanamide'], ['O=C(O)[C@@H](O)[C@H](O)C(=O)O', '(2S,3S)-2,3-dihydroxybutanedioic acid'],
   ['Br[C@@H]1CCCC[C@H]1Br', '(1R,2R)-1,2-dibromocyclohexane'], ['C[C@H](Cl)[C@@H](C)CC', '(2S,3S)-2-chloro-3-methylpentane'],
-  ['CCC[C@@H](C)C(=O)OC', 'methyl (R)-2-methylpentanoate'], ['C[C@@H](O)CC(=O)O[C@@H](C)CC', '(S)-butan-2-yl (R)-3-hydroxybutanoate']
+  ['CCC[C@@H](C)C(=O)OC', 'methyl (R)-2-methylpentanoate'], ['C[C@@H](O)CC(=O)O[C@@H](C)CC', '(S)-butan-2-yl (R)-3-hydroxybutanoate'],
+  /* ── 고리 cis/trans (OPSIN 으로 확인) ── */
+  ['C[C@@H]1CC[C@@H](C)CC1', 'trans-1,4-dimethylcyclohexane', 'trans-1,4-다이메틸사이클로헥세인'], ['C[C@@H]1CC[C@H](C)CC1', 'cis-1,4-dimethylcyclohexane'],
+  ['C[C@H]1CC[C@H](O)CC1', 'trans-4-methylcyclohexan-1-ol'], ['OC(=O)[C@H]1CC[C@@H](C)CC1', 'cis-4-methylcyclohexane-1-carboxylic acid'],
+  ['CC(=O)N[C@H]1CC[C@@H](C)CC1', 'N-(cis-4-methylcyclohexyl)ethanamide']
 ];
 
 const out = [];

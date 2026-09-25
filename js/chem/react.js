@@ -1,7 +1,7 @@
 /* 반응 예측: 기질(분자 그래프) + 시약 → 생성물(주 · 부), 메커니즘, 선택성, 풀이 단계, 최신 관점.
    규칙은 스미스 유기화학의 핵심 반응 단원 흐름을 따르고, 2000년대 이후 달라진 이해와 방법을 덧붙였다.
    생성물은 이름 엔진으로 이름을 짓는다 (react-data.js 에 시약 목록과 설명 글). */
-import { clone, parseSmiles, addBond, setOrder, removeAtoms, bondBetween, rings, isBenzene, perceiveAromatic, components, subMol, HALOGENS, chiralOK, cleanChi, orient4 } from './core.js';
+import { clone, parseSmiles, addBond, setOrder, removeAtoms, bondBetween, rings, isBenzene, perceiveAromatic, components, subMol, HALOGENS, chiralOK, cleanChi, orient4, chiSignFor } from './core.js';
 import { layout, stereoFromCoords, branch } from './layout.js';
 import { stereocenters } from './cip.js';
 import { analyze } from './name.js';
@@ -164,7 +164,8 @@ function conjugated(m, a, b) { return [a, b].some(x => carbonNbrs(m, x).some(j =
 export function scan(mol) {
   const m = mol, A = m.atoms, R = rings(m);
   const { info } = analyze(m);
-  const out = { halides: [], alcohols: [], phenols: [], alkenes: [], alkynes: [], carbonyls: [], arenes: [], arylHalides: [], vinylHalides: [], acidic: [], nitro: [], benzylic: [], amines: [] };
+  const out = { halides: [], alcohols: [], phenols: [], alkenes: [], alkynes: [], carbonyls: [], arenes: [], arylHalides: [], vinylHalides: [], acidic: [], nitro: [], benzylic: [], amines: [],
+    epoxides: [], ethers: [], anilines: [], enones: [], methylKetones: [], alphaCO: [] };
   A.forEach((a, i) => {
     if (a.el === 'C' && sp3(m, i)) for (const n of m.nb[i]) if (['Cl', 'Br', 'I'].includes(A[n.j].el)) out.halides.push({ c: i, x: n.j, cls: classOf(m, i), allylic: allylic(m, i), benzylic: benzylic(m, i) });
     if (a.el === 'C' && !sp3(m, i)) for (const n of m.nb[i]) if (['Cl', 'Br', 'I'].includes(A[n.j].el) && !(info[i] && info[i].oxo.length)) (aromaticAtom(m, i) ? out.arylHalides : out.vinylHalides).push({ c: i, x: n.j });
@@ -187,6 +188,27 @@ export function scan(mol) {
   info.forEach((f, i) => { if (f && f.kind) out.carbonyls.push({ c: i, kind: f.kind, f }); });
   R.list.forEach(r => { if (isBenzene(m, r)) out.arenes.push({ ring: r }); });
   A.forEach((a, i) => { if (a.el === 'C' && a.h > 0 && sp3(m, i) && benzylic(m, i)) out.benzylic.push({ c: i }); });
+  /* 에폭사이드 · 에터 · 아닐린 · α,β-불포화 카보닐 · 메틸 케톤 · α-H 가 있는 카보닐 */
+  A.forEach((a, i) => {
+    if (a.el === 'O' && a.h === 0 && !a.q && m.nb[i].length === 2 && m.nb[i].every(n => A[n.j].el === 'C' && n.o === 1)) {
+      const [p, q] = m.nb[i].map(n => n.j);
+      if (bondBetween(m, p, q)) out.epoxides.push({ o: i, a: p, b: q });
+      else if (![p, q].some(c => info[c] && info[c].oxo.length)) out.ethers.push({ o: i, c1: p, c2: q });
+    }
+    if (a.el === 'N' && !a.q && a.h === 2 && m.nb[i].length === 1 && aromaticAtom(m, m.nb[i][0].j)) out.anilines.push({ n: i, c: m.nb[i][0].j });
+  });
+  info.forEach((f, c) => {
+    if (!f || !['aldehyde', 'ketone', 'ester'].includes(f.kind)) return;
+    for (const al of carbonNbrs(m, c)) {
+      const d = m.nb[al].find(n => n.o === 2 && isC(m, n.j) && !m.bonds[n.k].arom);
+      if (d && d.j !== c) out.enones.push({ co: c, alpha: al, beta: d.j, kind: f.kind });
+    }
+    if (f.kind === 'ketone' && carbonNbrs(m, c).some(j => A[j].h === 3)) out.methylKetones.push({ c, f });
+    if (f.kind === 'aldehyde' || f.kind === 'ketone') {
+      const al = carbonNbrs(m, c).filter(j => A[j].h > 0 && sp3(m, j));
+      if (al.length) out.alphaCO.push({ c, f, alphas: al });
+    }
+  });
   out.info = info;
   return out;
 }
@@ -236,6 +258,45 @@ export function eliminate(mol, c, x, bt, rel) {
     if (p !== undefined && q !== undefined) extra.push({ x: p, a: c, b: bt, y: q, rel });
   }
   return finish(m, extra)[0];
+}
+/* ── E2 입체: 이탈기와 β-H 가 안티 평면(180°) ───────────
+   고리: 둘 다 축 방향(trans-다이축)이어야 하므로 β-H 가 이탈기와 고리의 반대 면(trans)일 때만.
+   사슬: 두 탄소의 배열이 정해져 있고 β 탄소에 H 가 하나뿐이면 안티 평면 배치가 하나 → 알켄의 E/Z 가 하나로 정해진다.
+   반환 { ok, rel(eliminate 의 기준 치환기끼리 'cis'|'trans'|null), ring, known } */
+function ringFace(m, ring, i, g) {
+  if (!chiralOK(m, i)) return 0;
+  const k = ring.indexOf(i), n = ring.length;
+  const prev = ring[(k - 1 + n) % n], next = ring[(k + 1) % n];
+  const rest = m.atoms[i].chi.n.filter(j => j !== prev && j !== next && j !== g);
+  if (rest.length !== 1) return 0;
+  return chiSignFor(m.atoms[i].chi, [prev, next, g, rest[0]]);
+}
+export function antiE2(mol, c, x, bt) {
+  const R = rings(mol);
+  if (R.of[c] >= 0 && R.of[c] === R.of[bt]) {
+    if (mol.atoms[bt].h === 1 && chiralOK(mol, c) && chiralOK(mol, bt)) {
+      const ring = R.list[R.of[c]];
+      const fx = ringFace(mol, ring, c, x), fh = ringFace(mol, ring, bt, -1);
+      if (fx && fh) return { ok: fx !== fh, ring: true, known: true };
+    }
+    return { ok: true, ring: true };
+  }
+  if (mol.atoms[bt].h !== 1 || !chiralOK(mol, c) || !chiralOK(mol, bt)) return { ok: true };
+  /* 뉴먼 투영: Cα–Cβ 축을 x 로, 이탈기는 0°, β-H 는 180° */
+  const P = (th, x0) => [x0, Math.cos(th * Math.PI / 180), Math.sin(th * Math.PI / 180)];
+  const ca = mol.atoms[c].chi, cb = mol.atoms[bt].chi;
+  const aRest = ca.n.filter(j => j !== bt && j !== x), bRest = cb.n.filter(j => j !== c && j !== -1);
+  if (aRest.length !== 2 || bRest.length !== 2) return { ok: true };
+  const posA = new Map([[bt, [1, 0, 0]], [x, P(0, -0.33)]]), posB = new Map([[c, [-1, 0, 0]], [-1, P(180, 0.33)]]);
+  const setA = sw => { posA.set(aRest[sw ? 1 : 0], P(120, -0.33)); posA.set(aRest[sw ? 0 : 1], P(240, -0.33)); return orient4(...ca.n.map(j => posA.get(j))); };
+  const setB = sw => { posB.set(bRest[sw ? 1 : 0], P(60, 0.33)); posB.set(bRest[sw ? 0 : 1], P(300, 0.33)); return orient4(...cb.n.map(j => posB.get(j))); };
+  if (setA(false) !== ca.s) setA(true);
+  if (setB(false) !== cb.s) setB(true);
+  /* eliminate 가 E/Z 기준으로 쓰는 치환기와 같은 것을 고른다 */
+  const p = carbonNbrs(mol, c, bt).concat(mol.nb[c].filter(n => n.j !== bt && n.j !== x && !isC(mol, n.j)).map(n => n.j))[0];
+  const q = mol.nb[bt].filter(n => n.j !== c).map(n => n.j)[0];
+  if (p === undefined || q === undefined || !posA.has(p) || !posB.has(q)) return { ok: true };
+  return { ok: true, rel: posA.get(p)[2] * posB.get(q)[2] > 0 ? 'cis' : 'trans', known: true };
 }
 /* β 탄소 목록 (H 있고, 이미 다중결합이 아닌 탄소) */
 export function betas(m, c) { return carbonNbrs(m, c).filter(j => m.atoms[j].h > 0 && sp3(m, j)); }

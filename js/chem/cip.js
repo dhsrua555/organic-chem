@@ -86,8 +86,17 @@ export function rankBranches(mol, c) {
   for (let k = 0; k < 3; k++) if (compareBranch(mol, sorted[k], sorted[k + 1]) === 0) return null;
   return sorted;
 }
-/* 입체중심: sp3 탄소, 치환기 넷이 모두 다름 */
+/* 입체중심: sp3 탄소, 치환기 넷이 모두 다름. 같은 분자(구조가 그대로면)는 다시 계산하지 않는다 */
+const SC = new WeakMap();
 export function stereocenters(mol) {
+  const sig = mol.atoms.map(a => a.el + a.h).join() + '|' + mol.bonds.map(b => b.a + '-' + b.b + ':' + b.o).join();
+  const hit = SC.get(mol);
+  if (hit && hit.sig === sig) return hit.list.slice();
+  const list = stereocentersRaw(mol);
+  SC.set(mol, { sig, list });
+  return list.slice();
+}
+function stereocentersRaw(mol) {
   const out = [];
   mol.atoms.forEach((a, i) => {
     if (a.el !== 'C' || a.h > 1) return;

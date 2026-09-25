@@ -4,21 +4,24 @@ import { fromSmiles } from '../chem/edit.js';
 import { makeMol } from '../chem/core.js';
 import { drawMolecule } from '../draw.js';
 import { entry, tokensHTML, esc, store, getLang, onLang } from '../ui.js';
-import { TIMELINE } from '../data.js';
 import { commonName } from '../chem/common.js';
 import { defineMissing } from '../chem/stereo.js';
 import { rsCardHTML } from '../rsview.js';
 
 const EXAMPLES = {
-  sn: [['C[C@@H](Br)CC', '(R)-2-브로모뷰테인'], ['CC(C)(C)Br', 'tert-뷰틸 브로마이드'], ['CCCBr', '1-브로모프로페인'], ['CC(C)C(C)Br', '자리옮김이 되는 2차'], ['BrCc1ccccc1', '벤질 브로마이드']],
-  alc: [['C[C@@H](O)CC', '(R)-뷰탄-2-올'], ['CCCO', '프로판-1-올'], ['CC(C)(C)O', 'tert-뷰탄올'], ['OC1CCCCC1', '사이클로헥산올'], ['CC(C)C(C)O', '3-메틸뷰탄-2-올']],
+  sn: [['C[C@@H](Br)CC', '(R)-2-브로모뷰테인'], ['CC(C)(C)Br', 'tert-뷰틸 브로마이드'], ['CCCBr', '1-브로모프로페인'], ['CC(C)C(C)Br', '자리옮김이 되는 2차'], ['BrCc1ccccc1', '벤질 브로마이드'],
+    ['C[C@H](Br)[C@@H](C)CC', '2-브로모-3-메틸펜테인 (안티 E2)'], ['C[C@@H]1CCCC[C@H]1Br', 'trans-1-브로모-2-메틸사이클로헥세인'], ['CC(C)[C@@H]1CC[C@@H](C)C[C@H]1Cl', '멘틸 클로라이드'], ['CC(C)[C@@H]1CC[C@@H](C)C[C@@H]1Cl', '네오멘틸 클로라이드']],
+  alc: [['C[C@@H](O)CC', '(R)-뷰탄-2-올'], ['CCCO', '프로판-1-올'], ['CC(C)(C)O', 'tert-뷰탄올'], ['OC1CCCCC1', '사이클로헥산올'], ['CC(C)C(C)O', '3-메틸뷰탄-2-올'],
+    ['CC1CO1', '2-메틸옥시레인 (에폭사이드)'], ['CC1(C)CO1', '2,2-다이메틸옥시레인'], ['C[C@@H]1O[C@@H]1C', 'cis-2,3-다이메틸옥시레인'], ['COc1ccccc1', '아니솔 (에터)'], ['CC(C)(C)OC', 'tert-뷰틸 메틸 에터']],
   ene: [['CC=C', '프로펜'], ['CC(C)=CC', '2-메틸뷰트-2-엔'], ['C1=CCCCC1', '사이클로헥센'], ['CC(C)(C)C=C', '3,3-다이메틸뷰트-1-엔'], ['C/C=C/C', '(E)-뷰트-2-엔'], ['C/C=C\\C', '(Z)-뷰트-2-엔'], ['CC1=CCCCC1', '1-메틸사이클로헥센']],
   yne: [['CCC#C', '뷰트-1-아인'], ['CC#CC', '뷰트-2-아인'], ['C#Cc1ccccc1', '페닐아세틸렌']],
-  co: [['CCC=O', '프로판알'], ['CC(=O)c1ccccc1', '아세토페논'], ['O=C1CCCCC1', '사이클로헥산온'], ['CCOC(C)=O', '아세트산 에틸'], ['CCC#N', '프로페인나이트릴'], ['OCCC(C)=O', 'OH 가 있는 케톤']],
+  co: [['CCC=O', '프로판알'], ['CC(=O)c1ccccc1', '아세토페논'], ['O=C1CCCCC1', '사이클로헥산온'], ['CC(=O)C(C)(C)C', '피나콜론 (바이어–빌리거)'], ['CC=CC(C)=O', '펜트-3-엔-2-온 (짝 첨가)'], ['CCOC(C)=O', '아세트산 에틸'], ['CCC#N', '프로페인나이트릴'], ['OCCC(C)=O', 'OH 가 있는 케톤']],
   acyl: [['CC(=O)O', '아세트산'], ['CC(=O)Cl', '아세틸 클로라이드'], ['CCOC(=O)c1ccccc1', '벤조산 에틸'], ['CC(N)=O', '아세트아마이드'], ['CCC#N', '프로페인나이트릴']],
-  aro: [['c1ccccc1', '벤젠'], ['Cc1ccccc1', '톨루엔'], ['COc1ccccc1', '아니솔'], ['[O-][N+](=O)c1ccccc1', '나이트로벤젠'], ['Nc1ccccc1', '아닐린'], ['CC(=O)Nc1ccccc1', '아세트아닐라이드'], ['Cc1ccc(C)cc1', 'p-자일렌']],
+  alpha: [['CC(=O)CC', '뷰탄-2-온'], ['CC(C)C(C)=O', '3-메틸뷰탄-2-온'], ['CC(=O)c1ccccc1', '아세토페논 (할로폼)'], ['CC=O', '아세트알데하이드'], ['CCC=O', '프로판알'], ['CCOC(C)=O', '아세트산 에틸'], ['O=C1CCCCC1', '사이클로헥산온']],
+  aro: [['c1ccccc1', '벤젠'], ['Cc1ccccc1', '톨루엔'], ['COc1ccccc1', '아니솔'], ['[O-][N+](=O)c1ccccc1', '나이트로벤젠'], ['Nc1ccccc1', '아닐린'], ['CC(=O)Nc1ccccc1', '아세트아닐라이드'], ['Cc1ccc(C)cc1', 'p-자일렌'],
+    ['Clc1ccc(cc1)[N+](=O)[O-]', '4-클로로나이트로벤젠 (SNAr)'], ['Cc1ccc(Cl)cc1', '4-클로로톨루엔 (벤자인)'], ['Nc1ccc(C)cc1', 'p-톨루이딘 (다이아조늄)']],
   rad: [['CCC', '프로페인'], ['CC(C)C', '아이소뷰테인'], ['CCCC', '뷰테인'], ['CC(C)CC', '2-메틸뷰테인'], ['C1CCCCC1', '사이클로헥세인']],
-  cc: [['CC=O', '아세트알데하이드'], ['CCOC(C)=O', '아세트산 에틸'], ['C=CC=C', '뷰타-1,3-다이엔'], ['C=CC(C)=C', '아이소프렌'], ['Brc1ccccc1', '브로모벤젠'], ['C=CCCCC=C', '헵타-1,6-다이엔'], ['C=CCCC', '펜트-1-엔']]
+  cc: [['C=CC=C', '뷰타-1,3-다이엔'], ['C=CC(C)=C', '아이소프렌'], ['Brc1ccccc1', '브로모벤젠'], ['C=CCCCC=C', '헵타-1,6-다이엔'], ['C=CCCC', '펜트-1-엔']]
 };
 const ROLE = { major: '주생성물', minor: '부생성물', side: '함께 생김' };
 const pack = m => ({ a: m.atoms.map(x => [x.el, x.h, x.q || 0, +x.x.toFixed(3), +x.y.toFixed(3), x.chi ? [...x.chi.n, x.chi.s] : 0]), b: m.bonds.map(x => [x.a, x.b, x.o, x.arom ? 1 : 0]) });
@@ -37,7 +40,7 @@ export function mount(root, app, params) {
   root.innerHTML = `<section class="page react">
     <div class="pg-head">
       <div><p class="eyebrow"><span class="bar"></span>02 — REACTIONS</p><h1 class="title">REACTIONS<small>반응 예측</small></h1></div>
-      <p class="lead" style="margin:0;max-width:60ch">기질을 고르고 시약을 누르세요. 스미스 유기화학의 핵심 반응 규칙으로 주생성물과 부생성물을 예측하고, 왜 그렇게 되는지와 교과서 이후에 새로 알려진 것을 함께 보여 줍니다.</p>
+      <p class="lead" style="margin:0;max-width:62ch">기질을 고르고 시약을 누르세요. 스미스 · 브루스 유기화학의 반응 규칙으로 주생성물 · 부생성물과 입체(R/S · cis/trans · E/Z)까지 예측하고, 왜 그렇게 되는지와 반응마다 최신 연구로 바뀐 이해를 함께 보여 줍니다.</p>
     </div>
     <div class="rx-grid">
       <div class="rx-left">
@@ -55,8 +58,6 @@ export function mount(root, app, params) {
       </div>
       <div class="rx-right" aria-live="polite"></div>
     </div>
-    <div class="sec-h"><h2>Since Smith</h2><p>교과서 이후에 새로 알려지거나 널리 쓰이게 된 것</p></div>
-    <ol class="timeline">${TIMELINE.map(t => `<li><span class="ty">${t.y}</span><div><b>${esc(t.t)}</b><p>${esc(t.d)}</p></div></li>`).join('')}</ol>
   </section>`;
   const q = s => root.querySelector(s);
 

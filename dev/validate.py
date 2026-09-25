@@ -13,21 +13,25 @@ for f in sys.argv[1:]:
     for line in [l for l in Path(f).read_text(encoding="utf-8").splitlines() if not l.startswith("#")]:
         parts = line.split('\t')
         subs, name, mb = parts[:3]
-        rows.append((Path(f).stem, subs, name, mb.replace('|', '\n'), parts[3] if len(parts) > 3 else None))
+        rows.append((Path(f).stem, subs, name, mb.replace('|', '\n'), parts[3] if len(parts) > 3 else None, parts[4] if len(parts) > 4 else ''))
 names = [r[2].replace('′', "'").replace('″', "''") for r in rows]
 res = subprocess.run([str(jdk4py.JAVA), '-jar', str(JAR), '-osmi'], input='\n'.join(names) + '\n', capture_output=True, text=True, encoding='utf-8')
 smis = res.stdout.split('\n')
 bad = collections.Counter(); shown = 0; ok = 0; seen = {}
-dup = []; cipBad = []; cipN = 0
-for (src, subs, name, mb, rs), smi in zip(rows, smis):
+dup = []; cipBad = []; cipN = 0; cipRing = 0
+for (src, subs, name, mb, rs, ringc), smi in zip(rows, smis):
     ref = Chem.MolFromMolBlock(mb)
     want = Chem.MolToSmiles(ref) if ref else None
     if rs is not None and ref:
         rdCIPLabeler.AssignCIPLabels(ref)
-        theirs = {a.GetIdx() + 1: a.GetProp('_CIPCode') for a in ref.GetAtoms() if a.HasProp('_CIPCode')}
+        theirs = {a.GetIdx() + 1: a.GetProp('_CIPCode') for a in ref.GetAtoms() if a.HasProp('_CIPCode') and a.GetProp('_CIPCode') in ('R', 'S')}
         ours = {int(x.split(':')[0]): x.split(':')[1] for x in rs.split(',') if x}
         cipN += 1
-        if theirs != ours: cipBad.append((subs, name, ours, theirs))
+        rsites = {int(x) for x in ringc.split(',') if x}
+        extra = {k for k in theirs if k not in ours}
+        if extra and extra <= rsites and all(theirs.get(k) == v for k, v in ours.items()):
+            cipRing += 1
+        elif theirs != ours: cipBad.append((subs, name, ours, theirs))
     got = None
     if smi.strip():
         m = Chem.MolFromSmiles(smi.strip())
@@ -46,6 +50,6 @@ for (src, subs, name, mb, rs), smi in zip(rows, smis):
 print(f'\n{ok} ok, {dict(bad)} of {len(rows)}')
 print(f'same structure, different names: {len(dup)}')
 if cipN:
-    print(f'R/S vs RDKit CIP: {cipN - len(cipBad)} / {cipN} same')
+    print(f'R/S vs RDKit CIP: {cipN - len(cipBad) - cipRing} / {cipN} same, {cipRing} where RDKit also labels a ring cis/trans carbon (named cis/trans here), {len(cipBad)} different')
     for c in cipBad[:25]: print('   CIP', c)
 for d in dup[:30]: print('  ', d)

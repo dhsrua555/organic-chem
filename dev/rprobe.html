@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>반응 확인</title>
+<pre id="out"></pre>
+<script type="module">
+import { parseSmiles } from '../js/chem/core.js';
+import { layout } from '../js/chem/layout.js';
+import { predict } from '../js/chem/reactions.js';
+import { defineMissing } from '../js/chem/stereo.js';
+/* ?c=smi~id|smi~id ... */
+const q = new URLSearchParams(location.search);
+const L = [];
+for (const item of (q.get('c') || '').split('|').filter(Boolean)) {
+  const [smi, id] = item.split('~');
+  try {
+    let m = parseSmiles(smi); layout(m); m = defineMissing(m);
+    const r = predict(m, id);
+    L.push(`${smi} + ${id}: ${r.ok ? r.mech : 'NONE ' + r.reason}`);
+    for (const p of r.products) L.push(`   ${p.role}: ${p.name ? p.name.nameEn : 'ERR ' + p.err}${p.pct ? ' ' + p.pct + '%' : ''} [${p.tag || ''}] ${p.stereoTag || ''}${p.name && p.name.relName ? ' rel=' + p.name.relName.en : ''}`);
+  } catch (e) { L.push(`${smi} + ${id}: CRASH ${e.message} ${e.stack.split('\n')[1]}`); }
+}
+document.getElementById('out').textContent = L.join('\n');
+window.__done = true;
+</script>

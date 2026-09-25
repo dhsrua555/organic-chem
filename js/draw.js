@@ -162,6 +162,13 @@ export function drawMolecule(mol, res, opts = {}) {
     else out.marks.push(`<text class="m-star" x="${r1(X(mx))}" y="${r1(Y(my) + 5)}" text-anchor="middle">*</text>`);
     grow(mx, my, 0.2);
   }
+  /* 고리 cis / trans 표시 (고리 가운데) */
+  if (res && res.ct && opts.stars !== false && opts.ctLabels !== false) for (const x of res.ct) {
+    if (x.n !== 2) continue;
+    const ring = R.list[x.ring]; if (!ring) continue;
+    const cx = ring.reduce((s, i) => s + A[i].x, 0) / ring.length, cy = ring.reduce((s, i) => s + A[i].y, 0) / ring.length;
+    out.marks.push(`<text class="m-ct" x="${r1(X(cx))}" y="${r1(Y(cy) + 4)}" text-anchor="middle">${x.rel}</text>`);
+  }
   /* CIP 순위 ①②③④ */
   if (opts.cip !== undefined && opts.cip !== null && A[opts.cip]) {
     const c = opts.cip, C = A[c];

@@ -6,7 +6,7 @@
 import { molblock, toSmiles } from '../js/chem/core.js';
 import { nameMolecule } from '../js/chem/name.js';
 import { FRAGMENTS, TEMPLATES, fromSmiles, attach, cycleBond, flipEZ } from '../js/chem/edit.js';
-import { defineMissing, flipCenter, wedges, stereoInfo } from '../js/chem/stereo.js';
+import { defineMissing, flipCenter, wedges, stereoInfo, stereoSites, ringSites } from '../js/chem/stereo.js';
 /* ?n=2000&seed=1&max=6&rs=1 : 뼈대에서 시작해 조각 붙이기 · 결합 바꾸기를 무작위로 max 번까지.
    rs=1 이면 입체중심마다 배열을 무작위로 정하고 MOL 에 쐐기를 적는다 (4번째 칸: 원자번호:R/S) */
 const q = new URLSearchParams(location.search);
@@ -46,8 +46,8 @@ for (let t = 0; t < N; t++) {
   let rsCol = '';
   if (RS) {
     m = defineMissing(m);
-    for (const c of stereoInfo(m).centers) if (rnd() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
-    rsCol = [...stereoInfo(m).rs].map(([c, d]) => (c + 1) + ':' + d).join(',');
+    for (const c of stereoSites(m)) if (rnd() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
+    rsCol = [...stereoInfo(m).rs].map(([c, d]) => (c + 1) + ':' + d).join(',') + '	' + [...ringSites(m).values()].flat().map(c => c + 1).join(',');
   }
   let name;
   try { name = nameMolecule(m).nameEn; stats.ok++; }

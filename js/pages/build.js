@@ -16,7 +16,7 @@ const TOOLS = [
   ['bond', '결합', '탄소–탄소 결합을 누를 때마다 단일 → 이중 → 삼중'],
   ['erase', '지우기', '원자를 누르면 그 원자와 바깥 가지를 지웁니다'],
   ['flip', 'E/Z', '이중결합을 누르면 E ↔ Z 로 뒤집습니다'],
-  ['rs', 'R/S', '입체중심(치환기 넷이 모두 다른 탄소, 그림의 R · S)을 누르면 거울상 배열로 뒤집습니다']
+  ['rs', 'R/S', '입체중심(그림의 R · S)이나 고리에 치환기가 달린 탄소를 누르면 배열을 뒤집습니다 (R ↔ S, cis ↔ trans)']
 ];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const FAMOUS = TEMPLATES.filter(t => t.kind === 'famous');
@@ -86,10 +86,10 @@ export function mount(root, app, params) {
     q('#b-undo').disabled = !S.hist.length; q('#b-redo').disabled = !S.redo.length;
   }
   function save() { store.set('build2', { mol: pack(S.mol), sel: S.sel }); }
-  function commit(m, frag) {
+  function commit(m, frag, fresh) {
     S.hist.push(S.mol); if (S.hist.length > 80) S.hist.shift();
     S.redo = [];
-    S.prev = cur;
+    S.prev = fresh ? null : cur; /* 새 분자를 불러오면 "바뀐 점"을 비교하지 않는다 */
     S.mol = defineMissing(m); S.msg = '';
     if (frag) S.lastFrag = frag;
     save(); render(true);
@@ -238,7 +238,7 @@ export function mount(root, app, params) {
     const el = e.target.closest('[data-atom]'); if (!el) return;
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el); }
   });
-  const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; commit(fromSmiles(t.smi)); };
+  const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; S.cip = null; commit(fromSmiles(t.smi), null, true); };
   root.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
   root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; paintTools(); render(false); });
   root.querySelector('.palette-wrap').addEventListener('click', e => {
@@ -258,7 +258,7 @@ export function mount(root, app, params) {
       for (let j = 0; j < k; j++) { const at = m.atoms.map((a, i) => i).filter(i => m.atoms[i].h > 0); const r = attach(m, pick(at), pick(pool)); if (r.mol) m = r.mol; }
       const e = entry(m);
       if (!e.res || (e.res.notes || []).some(n => ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'].includes(n.type))) continue;
-      S.pick = null; commit(m); return;
+      S.pick = null; commit(m, null, true); return;
     }
   });
   q('#b-react').addEventListener('click', () => app.go('react', { mol: S.mol }));

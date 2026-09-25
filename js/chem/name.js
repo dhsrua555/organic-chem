@@ -5,7 +5,7 @@
    결과: 영어 · 한글 토큰(역할별 색칠), 모체 · 번호 · 접두사 정보, 풀이에 쓰는 근거. */
 import { rings as ringsOf, isBenzene, bondBetween, HALOGENS } from './core.js';
 import { doubleBondStereo, stereogenicDB } from './cip.js';
-import { stereoInfo, mirror } from './stereo.js';
+import { stereoInfo, mirror, cisTrans } from './stereo.js';
 
 export const PRI = { acid: 1, ester: 2, acylhalide: 3, amide: 4, nitrile: 5, aldehyde: 6, ketone: 7, alcohol: 8, amine: 9 };
 export const CLASS = {
@@ -413,7 +413,7 @@ function ringSub(C, r, from, bo) {
     if (!rs.enes.length) { en = 'cyclo' + STEM[m] + yl; ko = '사이클로' + KO_YL[m] + (bo === 2 ? '리덴' : ''); base = en; baseKo = ko; }
     else { const toks = parentWord(m, rs.enes, [], { en: yl, ko: ylKo, vowel: true, locs: [1] }, { ring: true }); en = toks.map(t => t.en).join(''); ko = toks.map(t => t.ko).join(''); }
   }
-  const st = rs.stereo ? `(${rs.stereo})-` : '';
+  const st = (rs.ct ? rs.ct + '-' : '') + (rs.stereo ? `(${rs.stereo})-` : '');
   if (!rs.pre) return { en: st + en, ko: st + ko, key: letters(en), compound: /\d/.test(en) || !!st, base, baseKo };
   return { en: st + rs.pre + en, ko: st + rs.preKo + ko, key: letters(rs.pre + en), compound: true, base, baseKo };
 }
@@ -439,7 +439,8 @@ function ringSubCore(C, r, from) {
   for (const d of C.db) { const ia = best.pos.has(d.a), ib = best.pos.has(d.b); if (ia !== ib && d.a !== from && d.b !== from) st.push([best.pos.get(ia ? d.a : d.b), d.desc]); }
   if (C.rs) for (const [c, d] of C.rs) if (best.pos.has(c)) st.push([best.pos.get(c), d]);
   const stereo = fmtDescs(st, stereoUnits(C, best.pos, from));
-  return { ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre, stereo };
+  const ct = (C.ct || []).find(x => x.n === 2 && x.atoms.every(a => best.pos.has(a)) && x.atoms.every(a => !(C.rs && C.rs.has(a))));
+  return { ct: ct ? ct.rel : null, ring, type, pos: best.pos, enes: best.enes, pre: g ? g.en : '', preKo: g ? g.ko : '', locOf: a => best.pos.get(a), prefixes: best.pre, stereo };
 }
 function ringWordFor(C, ri, rs, carbo) {
   const type = C.types[ri], m = rs.ring.length;
@@ -771,6 +772,7 @@ export function nameMolecule(mol, opts = {}) {
   C.db = doubleBondStereo(mol);
   const SI = stereoInfo(mol);
   C.rs = SI.rs; C.centers = SI.centers;
+  C.ct = cisTrans(mol);
   C.present = classesPresent(C);
   C.P = topClass(C.present);
   C.S = new Set();
@@ -817,7 +819,7 @@ export function nameMolecule(mol, opts = {}) {
   const res = assemble(C, best);
   Object.assign(res, { why: { chain: chainWhy, num: numWhy }, present: C.present, info, rule, db: C.db });
   res.centers = SI.centers;
-  res.rs = SI.rs; res.undef = SI.undef;
+  res.rs = SI.rs; res.undef = SI.undef; res.ct = C.ct;
   res.principalAtoms = principalAtoms(C, best);
   /* 이름에 들어가지 못한 R/S (곁가지의 곁가지 등) */
   const cited = (res.nameEn.match(/(?:^|[(,])\d*′*[RS](?=[,)])/g) || []).length;
@@ -911,18 +913,36 @@ function assemble(C, e) {
   /* 입체 표시 */
   const descs = e.descs || parentStereo(C, pos);
   const stereo = fmtDescs(descs.map(x => [x.l, x.d]), stereoUnits(C, pos));
+  /* 고리 모체의 치환기 두 개 cis/trans: R/S 가 없는 고리(1,4-이치환 등)는 이름 맨 앞에 cis- · trans- */
+  const ctP = cand.type === 'ring' ? (C.ct || []).find(x => x.n === 2 && x.atoms.every(a => pos.has(a))) : null;
+  const ctPlain = ctP && ctP.atoms.every(a => !(C.rs && C.rs.has(a)));
+  const ctTok = ctPlain ? [T(ctP.rel, ctP.rel, 'ste'), T('-', '-', 'pun')] : [];
   const ste = stereo ? [T(`(${stereo})`, `(${stereo})`, 'ste'), T('-', '-', 'pun')] : [];
-  const core = ste.concat(toks);
-  let en = core.map(t => ({ s: t.en, r: t.r })), ko = core.map(t => ({ s: t.ko, r: t.r }));
-  if (alkyl) {
-    en = [{ s: alkyl.en, r: 'alk' }, { s: ' ', r: 'pun' }].concat(en);
-    ko = ko.concat([{ s: ' ', r: 'pun' }, { s: alkyl.ko, r: 'alk' }]);
+  const core = ctTok.concat(ste, toks);
+  const build = coreT => {
+    let en = coreT.map(t => ({ s: t.en, r: t.r })), ko = coreT.map(t => ({ s: t.ko, r: t.r }));
+    if (alkyl) {
+      en = [{ s: alkyl.en, r: 'alk' }, { s: ' ', r: 'pun' }].concat(en);
+      ko = ko.concat([{ s: ' ', r: 'pun' }, { s: alkyl.ko, r: 'alk' }]);
+    }
+    if (tail) { en.push({ s: ' ', r: 'pun' }, { s: tail[0], r: 'suf' }); ko.push({ s: ' ', r: 'pun' }, { s: tail[1], r: 'suf' }); }
+    return { en, ko, nameEn: en.map(t => t.s).join(''), nameKo: ko.map(t => t.s).join('') };
+  };
+  const { en, ko, nameEn, nameKo } = build(core);
+  /* 상대 배치 이름: (1R,2R)-2-methylcyclohexan-1-ol → trans-2-methylcyclohexan-1-ol, (Z)-but-2-ene → cis-but-2-ene */
+  let relName = null;
+  if (ctP && !ctPlain && descs.length === 2 && descs.every(x => /[RS]/.test(x.d)) && ctP.atoms.every(a => C.rs.has(a))) {
+    const r = build([T(ctP.rel, ctP.rel, 'ste'), T('-', '-', 'pun'), ...toks]); relName = { en: r.nameEn, ko: r.nameKo, kind: 'ring', rel: ctP.rel };
+  } else if (descs.length === 1 && /^[EZ]$/.test(descs[0].d) && !ctTok.length) {
+    const d = C.db.find(x => pos.has(x.a) && pos.has(x.b) && Math.min(pos.get(x.a), pos.get(x.b)) === descs[0].l);
+    if (d && C.mol.atoms[d.a].h === 1 && C.mol.atoms[d.b].h === 1) {
+      const rel = descs[0].d === 'Z' ? 'cis' : 'trans';
+      const r = build([T(rel, rel, 'ste'), T('-', '-', 'pun'), ...toks]); relName = { en: r.nameEn, ko: r.nameKo, kind: 'alkene', rel };
+    }
   }
-  if (tail) { en.push({ s: ' ', r: 'pun' }, { s: tail[0], r: 'suf' }); ko.push({ s: ' ', r: 'pun' }, { s: tail[1], r: 'suf' }); }
-  const nameEn = en.map(t => t.s).join(''), nameKo = ko.map(t => t.s).join('');
   const locOut = new Map(); for (const [a, l] of pos) locOut.set(a, fmtLoc(l));
   return {
-    kind, P, tri: C.tri, en, ko, nameEn, nameKo, stereo,
+    kind, P, tri: C.tri, en, ko, nameEn, nameKo, stereo, relName, ringCT: ctP ? { ...ctP, plain: ctPlain } : null,
     parent: { type: cand.type, rtype: cand.rtype, atoms: cand.atoms, size: cand.size },
     chain: cand.type === 'chain' ? cand.atoms.slice().sort((x, y) => pos.get(x) - pos.get(y)) : cand.atoms,
     pos, locLabel: locOut, pLocs, enes, ynes, prefixes: e.groups || [], noLocs, n: cand.size, core

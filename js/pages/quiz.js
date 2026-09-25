@@ -4,7 +4,7 @@ import { TEMPLATES, fromSmiles, attach } from '../chem/edit.js';
 import { steps } from '../chem/explain.js';
 import { REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { drawMolecule } from '../draw.js';
-import { defineMissing, flipCenter, stereoInfo } from '../chem/stereo.js';
+import { defineMissing, flipCenter, stereoInfo, stereoSites } from '../chem/stereo.js';
 import { centerHTML } from '../rsview.js';
 import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle } from '../ui.js';
 
@@ -12,12 +12,26 @@ const UNSTABLE = ['enol', 'enamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hem
 const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'oxo', 'C2H5', 'vinyl', 'phenyl'];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
 const RX_SUBS = ['CCC(C)Br', 'CC(C)(C)Br', 'CCCBr', 'CC(C)C(C)Br', 'BrCc1ccccc1', 'CC(O)CC', 'CCCO', 'CC(C)(C)O', 'OC1CCCCC1', 'CC=C', 'CC(C)=CC', 'C1=CCCCC1', 'CC(C)(C)C=C',
-  'CCC#C', 'CC#CC', 'CCC=O', 'CC(=O)c1ccccc1', 'O=C1CCCCC1', 'CCOC(C)=O', 'CCC#N', 'CC(=O)O', 'CC(=O)Cl', 'c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', '[O-][N+](=O)c1ccccc1', 'CCC', 'CC(C)C', 'CC=O', 'C=CC=C', 'Brc1ccccc1'];
+  'CCC#C', 'CC#CC', 'CCC=O', 'CC(=O)c1ccccc1', 'O=C1CCCCC1', 'CCOC(C)=O', 'CCC#N', 'CC(=O)O', 'CC(=O)Cl', 'c1ccccc1', 'Cc1ccccc1', 'COc1ccccc1', '[O-][N+](=O)c1ccccc1', 'CCC', 'CC(C)C', 'CC=O', 'C=CC=C', 'Brc1ccccc1',
+  'CC1CO1', 'CC1(C)CO1', 'COc1ccccc1', 'CC=CC(C)=O', 'CC(=O)CC', 'Nc1ccccc1', 'Clc1ccc(cc1)[N+](=O)[O-]', 'Cc1ccc(Cl)cc1', 'CC(C)=O'];
 
 /* R/S 문제용: 입체중심이 하나인 쉬운 분자들 (배열은 문제마다 무작위로 뒤집는다) */
 const RS_EASY = ['C[C@@H](O)CC', 'C[C@H](Br)CC', 'C[C@H](N)C(=O)O', 'C[C@@H](O)C(=O)O', 'O[C@@H](c1ccccc1)C', 'CC[C@@H](C)CO', 'C[C@H](Cl)C=C', 'ClC[C@@H](O)C',
   'C[C@@H](C#N)CC', 'OC[C@H](O)C=O', 'CC(C)[C@@H](C)Br', 'C[C@@H]1CCCCC1=O', 'CC[C@H](C)C(=O)O', 'C[C@@H](F)CCl', 'CC[C@@H](O)C=C', 'N[C@@H](Cc1ccccc1)C(=O)O', 'C[C@H](OC)CC=O', 'CC(=O)[C@@H](C)CC'];
+/* cis/trans 문제용 고리 */
+const CT_RINGS = ['CC1CCC(C)CC1', 'CC1CCCCC1C', 'CC1CCC(O)CC1', 'CC1CC(C)C1', 'CC(C)(C)C1CCC(O)CC1', 'CC1CCC(Cl)CC1', 'OC1CCCC1Br', 'CC1CC1C', 'OC(=O)C1CCC(C)CC1', 'CC1CCCC(C)C1'];
+function randomCT() {
+  for (let t = 0; t < 60; t++) {
+    let m = defineMissing(fromSmiles(pick(CT_RINGS)));
+    for (const c of stereoSites(m)) if (Math.random() < 0.5) { const r = flipCenter(m, c); if (r.mol) m = r.mol; }
+    const e = entry(m);
+    const ct = e.res && e.res.ct && e.res.ct.find(x => x.n === 2);
+    if (ct) return { rs: true, ct: true, e, center: null, answer: ct.rel, pair: ct.atoms };
+  }
+  return null;
+}
 function randomRS(level) {
+  if (Math.random() < 0.3) { const q = randomCT(); if (q) return q; }
   for (let t = 0; t < 400; t++) {
     let m;
     if (level === 'easy') m = fromSmiles(pick(RS_EASY));
@@ -139,7 +153,7 @@ export function mount(root, app, params) {
     if (S.mode === 'rs') {
       const q = randomRS(S.level);
       if (!q) { card.innerHTML = '<p>문제를 만들지 못했습니다. 다시 눌러 주세요.</p>'; return; }
-      S.q = q; S.opts = [{ k: 'R' }, { k: 'S' }];
+      S.q = q; S.opts = q.ct ? [{ k: 'cis' }, { k: 'trans' }] : [{ k: 'R' }, { k: 'S' }];
       q.correct = S.opts.find(o => o.k === q.answer);
       app.setMol(q.e);
     } else if (S.mode === 'react') {
@@ -159,19 +173,24 @@ export function mount(root, app, params) {
   function drawRS() {
     const q = S.q, chosen = S.chosen, e = q.e;
     const loc = e.res.locLabel && e.res.locLabel.get(q.center);
-    const pic = drawMolecule(e.mol, e.res, { mode: mode(), locants: S.done, chain: false, compact: true, mark: q.center, rsLabels: S.done, cip: S.done ? q.center : null });
+    const pic = drawMolecule(e.mol, e.res, { mode: mode(), locants: S.done, chain: false, compact: true, mark: q.center, rsLabels: S.done, ctLabels: S.done, cip: S.done && !q.ct ? q.center : null });
+    const SUB = { R: 'rectus · 시계 방향', S: 'sinister · 시계 반대 방향', cis: '두 치환기가 고리의 같은 면', trans: '두 치환기가 고리의 반대 면' };
     const opts = S.opts.map((o, i) => {
       const cls = !S.done ? '' : o === q.correct ? ' right' : o === chosen ? ' wrong' : '';
-      return `<button class="q-opt rs${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''}><span class="k">${i + 1}</span><b>${o.k}</b><small>${o.k === 'R' ? 'rectus · 시계 방향' : 'sinister · 시계 반대 방향'}</small></button>`;
+      return `<button class="q-opt rs${cls}" type="button" data-i="${i}" ${S.done ? 'disabled' : ''}><span class="k">${i + 1}</span><b>${o.k}</b><small>${SUB[o.k]}</small></button>`;
     }).join('');
     let fb = '';
     if (S.done) {
       const right = chosen === q.correct;
-      fb = `<div class="q-feedback"><p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${loc ? 'C' + loc : '표시한 탄소'}는 <b>${q.answer}</b> · ${esc(e.res.nameEn)}</p>
-        <div class="rs-card panel">${centerHTML(e.mol, q.center, c => e.res.locLabel && e.res.locLabel.get(c))}</div>
+      const why = q.ct
+        ? `<div class="rs-card panel"><p class="rs-how">두 치환기의 결합이 ${q.answer === 'cis' ? '둘 다 쐐기이거나 둘 다 빗금 쐐기 → 고리의 같은 면 → <b>cis</b>' : '하나는 쐐기, 하나는 빗금 쐐기 → 고리의 반대 면 → <b>trans</b>'}. 고리는 돌 수 없어서 cis 와 trans 는 서로 다른 화합물(부분입체이성질체)입니다.${e.res.ringCT && e.res.ringCT.plain ? ' 이 경우 두 탄소는 R/S 입체중심이 아니어서 이름에 cis-/trans- 를 붙입니다.' : ''}</p></div>`
+        : `<div class="rs-card panel">${centerHTML(e.mol, q.center, c => e.res.locLabel && e.res.locLabel.get(c))}</div>`;
+      fb = `<div class="q-feedback"><p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '아쉽게도 오답'}</b> — ${q.ct ? '' : (loc ? 'C' + loc : '표시한 탄소') + '는 '}<b>${q.answer}</b> · ${esc(e.res.relName && q.ct ? e.res.relName.en : e.res.nameEn)}</p>
+        ${why}
         <div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">분자 조립에서 열기</button></div></div>`;
     }
-    card.innerHTML = `<p class="q-prompt">점선 원으로 표시한 탄소의 배열은? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.</p><div class="q-struct">${pic}</div><div class="q-opts">${opts}</div>` + fb;
+    const prompt = q.ct ? '고리 위 두 치환기는 cis 일까 trans 일까? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.' : '점선 원으로 표시한 탄소의 배열은? 쐐기(▲)는 앞으로, 빗금 쐐기는 뒤로 들어간 결합입니다.';
+    card.innerHTML = `<p class="q-prompt">${prompt}</p><div class="q-struct">${pic}</div><div class="q-opts">${opts}</div>` + fb;
     card.querySelectorAll('.q-opt').forEach(b => b.addEventListener('click', () => answer(S.opts[+b.dataset.i])));
     if (S.done) {
       card.querySelector('#q-next').addEventListener('click', next);

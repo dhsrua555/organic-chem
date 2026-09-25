@@ -66,7 +66,10 @@ void main(){ vec3 c = uBase * 0.42 + uGlow * clamp(vGlow, 0.0, 1.6); gl_FragColo
 
 export function createScene(canvas, { low = false, reduce = false } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !low, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, low ? 1.25 : 1.75));
+  /* 해상도는 프레임 시간을 보고 스스로 조절한다 (느린 그래픽 칩에서 렉 방지) */
+  const maxDpr = Math.min(window.devicePixelRatio || 1, low ? 1.25 : 1.5), minDpr = Math.min(maxDpr, low ? 0.75 : 1);
+  let dpr = maxDpr;
+  renderer.setPixelRatio(dpr);
   renderer.setClearColor(COL.bg, 1);
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(COL.bg, 0.05);
@@ -74,12 +77,12 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
   camera.position.set(0, 1.1, 15);
   camera.lookAt(0, 0, 0);
 
-  const floor = hexFloor(low ? 13 : 20, 1.25);
+  const floor = hexFloor(low ? 12 : 16, 1.25);
   floor.position.y = -3.6;
   scene.add(floor);
-  const streaks = horizonStreaks(low ? 26 : 48);
+  const streaks = horizonStreaks(low ? 20 : 34);
   scene.add(streaks);
-  const dust = dustField(low ? 220 : 520);
+  const dust = dustField(low ? 160 : 360);
   scene.add(dust);
 
   const root = new THREE.Group();
@@ -309,14 +312,14 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       if (!s) continue;
       const d = Math.hypot(s[0] - x, s[1] - y);
       const k = strength * 5.5 / (1 + d / 160);
-      const dir = a.p.clone().normalize();
-      if (!isFinite(dir.x)) dir.set(0, 1, 0);
-      a.v.addScaledVector(dir, k);
+      tv.copy(a.p).normalize();
+      if (!isFinite(tv.x)) tv.set(0, 1, 0);
+      a.v.addScaledVector(tv, k);
       a.v.z += k * 0.3;
       a.glow = Math.min(1.4, a.glow + strength * 0.9 / (1 + d / 220));
     }
   }
-  const v3 = new THREE.Vector3();
+  const v3 = new THREE.Vector3(), tv = new THREE.Vector3();
   function screenOf(a) {
     v3.copy(a.p).add(a.d);
     v3.applyMatrix4(current.group.matrixWorld);
@@ -330,16 +333,16 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     if (!tags[k]) { const d = document.createElement('div'); d.className = 'ahud'; d.innerHTML = '<i></i><span></span>'; hud.appendChild(d); tags[k] = d; }
     return tags[k];
   }
+  const setIf = (d, k, v) => { if (d['_' + k] !== v) { d['_' + k] = v; if (k === 'text') d._span.textContent = v; else d.style[k] = v; } };
   function drawTags(list) {
-    for (let k = 0; k < tags.length; k++) if (!list[k]) tags[k].style.opacity = '0';
+    for (let k = 0; k < tags.length; k++) if (!list[k]) setIf(tags[k], 'opacity', '0');
     list.forEach((it, k) => {
       const d = tagFor(k);
-      d.style.opacity = String(Math.min(1, it.a.glow * 1.4 * current.passes[1].uniforms.uAlpha.value));
-      d.style.transform = `translate(${it.s[0].toFixed(1)}px, ${it.s[1].toFixed(1)}px)`;
+      if (!d._span) d._span = d.querySelector('span');
+      setIf(d, 'opacity', (Math.round(Math.min(1, it.a.glow * 1.4 * current.passes[1].uniforms.uAlpha.value) * 50) / 50).toFixed(2));
+      setIf(d, 'transform', `translate(${Math.round(it.s[0])}px, ${Math.round(it.s[1])}px)`);
       const label = it.a.el === 'H' ? 'H' : `${it.a.el}${it.a.heavy + 1}`;
-      const text = `${label} · ${it.a.hyb}`;
-      const span = d.querySelector('span');
-      if (span.textContent !== text) span.textContent = text;
+      setIf(d, 'text', `${label} · ${it.a.hyb}`);
     });
   }
 
@@ -350,28 +353,46 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
     const R = 150;
     const ex = state.explode;
     const near = [];
+    const damp = Math.exp(-9 * dt);
+    let busy = false;
     for (const a of w.phys) {
       let s = null, prox = 0;
       if (mouseActive || ex > 0.01) s = screenOf(a);
       if (mouseActive && s) { const d = Math.hypot(s[0] - state.px[0], s[1] - state.px[1]); prox = Math.max(0, 1 - d / R); prox *= prox; }
-      const dir = a.p.clone(); const L = dir.length() || 1; dir.divideScalar(L);
-      const target = dir.multiplyScalar(prox * 0.75 + ex * (0.35 + L * 0.45));
+      /* 가만히 있는 원자는 건너뛴다 */
+      if (!prox && ex < 0.001 && a.glow < 0.002 && a.v.lengthSq() < 1e-8 && a.d.lengthSq() < 1e-8) continue;
+      busy = true;
+      const L = a.p.length() || 1, k = (prox * 0.75 + ex * (0.35 + L * 0.45)) / L;
+      tv.set(a.p.x * k - a.d.x, a.p.y * k - a.d.y, a.p.z * k - a.d.z);
       /* 스프링 */
-      a.v.addScaledVector(target.sub(a.d), 60 * dt);
-      a.v.multiplyScalar(Math.exp(-9 * dt));
+      a.v.addScaledVector(tv, 60 * dt);
+      a.v.multiplyScalar(damp);
       a.d.addScaledVector(a.v, dt);
       a.glow += (Math.max(prox, ex * 0.6) - a.glow) * Math.min(1, dt * 6);
       if (a.i < MAXA) w.disp[a.i].set(a.d.x, a.d.y, a.d.z, a.glow);
       if (s && a.glow > 0.18 && (a.el !== 'H' || ex > 0.5)) near.push({ a, s });
     }
+    state.physBusy = busy;
     for (const sp of w.sprites) { const a = w.phys[sp.userData.atom]; sp.position.copy(a.p).add(a.d); }
     near.sort((p, q) => q.a.glow - p.a.glow);
     drawTags(near.slice(0, ex > 0.5 ? 16 : 6));
   }
 
+  /* 프레임 시간 평균으로 해상도 조절: 45fps 밑이면 낮추고, 오래 여유 있으면 다시 올린다 */
+  let ema = 16, frames = 0, calm = 0, cool = 0, idleFrames = 0;
+  function adapt(rawDt) {
+    ema += (Math.min(rawDt, 100) - ema) * 0.05;
+    if (++frames % 60) return;
+    if (cool > 0) { cool--; return; }
+    if (ema > 23 && dpr > minDpr) { dpr = Math.max(minDpr, dpr - 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 2; }
+    else if (ema < 14 && dpr < maxDpr) { if (++calm >= 5) { dpr = Math.min(maxDpr, dpr + 0.25); renderer.setPixelRatio(dpr); resize(); calm = 0; cool = 3; } }
+    else calm = 0;
+  }
   function frame(now) {
     if (!running) return;
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const raw = now - last;
+    const dt = Math.min(0.05, raw / 1000); last = now;
+    if (!document.hidden) adapt(raw);
     const k = 1 - Math.pow(0.001, dt);
     const c = state.cur, a = state.anchor;
     c.x += (a.x - c.x) * k * 0.9; c.y += (a.y - c.y) * k * 0.9; c.scale += (a.scale - c.scale) * k; c.dim += (a.dim - c.dim) * k;
@@ -414,6 +435,14 @@ export function createScene(canvas, { low = false, reduce = false } = {}) {
       streaks.material.uniforms.uTime.value = now * 0.001;
       dust.rotation.y = now * 0.00002;
     }
+    /* 움직임을 끈 상태에서 아무것도 변하지 않으면 다시 그리지 않는다 */
+    const still = !state.motion && !state.drag && !state.physBusy && state.explode < 0.001 && !state.hold
+      && state.live.every(w => w.t === w.target && w.delay <= 0) && Math.abs(state.zoom - state.zoomT) < 1e-4
+      && Math.abs(c.x - a.x) + Math.abs(c.y - a.y) + Math.abs(c.scale - a.scale) + Math.abs(c.dim - a.dim) < 1e-4
+      && Math.abs(spin.rotation.x - state.rotX) + Math.abs(spin.rotation.y - state.rotY) < 1e-4 && now / 1000 - rip.reduce((m, r) => Math.max(m, r.z), -99) > 3.2
+      && fu.uMouse.value.y === 0;
+    if (still && ++idleFrames > 2) { requestAnimationFrame(frame); return; }
+    if (!still) idleFrames = 0;
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
