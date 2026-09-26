@@ -20,6 +20,8 @@ const TOOLS = [
   ['rs', 'R/S', '입체중심 또는 치환된 고리 탄소를 선택하면 배열이 반전됩니다 (R ↔ S, cis ↔ trans)']
 ];
 const BASES = TEMPLATES.filter(t => t.kind === 'base');
+/* 편집기에 보이는 기본 골격은 여섯 개만 (나머지는 치환 · 결합 도구로 만들 수 있다) */
+const SHOWN = ['ethane', 'butane', 'propene', 'ethyne', 'cyclohexane', 'benzene'].map(id => BASES.find(t => t.id === id));
 const FAMOUS = TEMPLATES.filter(t => t.kind === 'famous');
 
 /* 저장용: 원자 · 결합만 */
@@ -44,11 +46,12 @@ export function mount(root, app, params) {
     </div>
     <div class="bl-grid">
       <div class="bl-tools">
-        <details class="blk blk-scaf panel ticks"${store.get('scafOpen', !saved) ? ' open' : ''}>
-          <summary class="lbl" id="lb-scaf">기본 골격 · 대표 화합물</summary>
-          <div class="scafs" role="group" aria-labelledby="lb-scaf">${BASES.map(t => `<button class="scaf" type="button" data-t="${t.id}"><span class="hx">${templateIcon(t.id)}</span>${t.ko}</button>`).join('')}</div>
-          <details class="famous"><summary>대표 화합물 ${FAMOUS.length}종</summary><div class="fam-list">${FAMOUS.map(t => `<button type="button" data-t="${t.id}"><b>${t.ko}</b><small>${t.note}</small></button>`).join('')}</div></details>
-        </details>
+        <div class="blk blk-scaf panel ticks">
+          <h2 class="lbl" id="lb-scaf">기본 골격</h2>
+          <div class="scafs" role="group" aria-labelledby="lb-scaf">${SHOWN.map(t => `<button class="scaf" type="button" data-t="${t.id}"><span class="hx">${templateIcon(t.id)}</span>${t.ko}</button>`).join('')}</div>
+          <label class="lbl fam-lbl" for="fam">대표 화합물</label>
+          <select id="fam" class="fam-select"><option value="">화합물 선택 (${FAMOUS.length}종)</option>${FAMOUS.map(t => `<option value="${t.id}">${t.ko} — ${t.note}</option>`).join('')}</select>
+        </div>
         <div class="blk blk-pal panel">
           <div class="toolbar" role="radiogroup" aria-label="도구">${TOOLS.map(([id, ko, tip]) => `<button class="tool" type="button" role="radio" data-tool="${id}" title="${tip}">${ko}</button>`).join('')}</div>
           <div class="palette-wrap">${tabsHTML('pal', FRAG_GROUPS.map(([g, ko]) => ({ id: g, label: ko, html: `<div class="palette" role="radiogroup" aria-label="${ko}">${Object.entries(FRAGMENTS).filter(([, f]) => f.group === g).map(([id, f]) => `<button class="chip" type="button" role="radio" data-g="${id}" aria-checked="false" title="${f.ko}"><span>${LBL(f.label)}</span></button>`).join('')}</div>` })), (FRAGMENTS[S.sel] || {}).group)}</div>
@@ -255,8 +258,8 @@ export function mount(root, app, params) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(el, true); }
   });
   const loadT = id => { const t = TEMPLATES.find(x => x.id === id); S.pick = null; S.cip = null; commit(fromSmiles(t.smi), null, true); };
-  root.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
-  q('.blk-scaf').addEventListener('toggle', e => store.set('scafOpen', e.currentTarget.open));
+  root.querySelectorAll('.scaf[data-t]').forEach(b => b.addEventListener('click', () => loadT(b.dataset.t)));
+  q('#fam').addEventListener('change', e => { const id = e.target.value; if (!id) return; loadT(id); e.target.value = ''; });
   root.querySelector('.toolbar').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; S.tool = b.dataset.tool; S.msg = ''; if (S.tool === 'rs') store.set('tab:build', 'stereo'); paintTools(); render(false); });
   root.querySelector('.palette-wrap').addEventListener('click', e => {
     const b = e.target.closest('[data-g]'); if (!b) return;

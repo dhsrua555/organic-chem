@@ -4,13 +4,13 @@
   color-scheme: dark;
   --bg: #03060f;
   --bg-2: #060c1b;
-  --panel: rgba(5, 11, 26, 0.86);
+  --panel: rgba(8, 15, 33, 0.94);
   --panel-2: rgba(9, 18, 40, 0.9);
-  --line: rgba(120, 160, 255, 0.13);
-  --line-2: rgba(120, 160, 255, 0.3);
+  --line: rgba(120, 160, 255, 0.22);
+  --line-2: rgba(130, 170, 255, 0.4);
   --ink: #e6eeff;
   --ink-2: #a8b6d6;
-  --muted: #6c7ca2;
+  --muted: #8193bd;
   --accent: #2f86ff;
   --accent-2: #74baff;
   --accent-3: #bfe0ff;
@@ -56,8 +56,6 @@ body.focus3d #gl:active { cursor: grabbing; }
 .hud-bottom { bottom: 0; height: var(--hud-h); padding-bottom: env(safe-area-inset-bottom, 0px); background: linear-gradient(to top, rgba(3, 6, 15, 0.94), rgba(3, 6, 15, 0)); }
 .tag { display: flex; align-items: center; gap: 14px; text-decoration: none; font-size: 11.5px; letter-spacing: 0.2em; color: var(--ink-2); text-transform: uppercase; font-weight: 400; }
 .tag .bar, .eyebrow .bar { display: inline-block; width: 4px; height: 20px; background: var(--accent); box-shadow: 0 0 12px rgba(47, 134, 255, 0.7); }
-.tag .tag-ko { letter-spacing: 0.08em; color: var(--muted); }
-.tag .tag-en::after { content: '·'; margin-left: 14px; color: var(--muted); }
 .menu-btn { display: flex; align-items: center; gap: 18px; background: none; border: 0; cursor: pointer; padding: 10px 0; font-size: 11.5px; letter-spacing: 0.22em; color: var(--ink-2); }
 .menu-btn:hover { color: var(--ink); }
 .mb-lines { display: grid; gap: 5px; width: 22px; }
@@ -116,7 +114,7 @@ body.focus3d #gl:active { cursor: grabbing; }
 .lbl { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.24em; color: var(--muted); text-transform: uppercase; font-weight: 400; }
 .lead { max-width: 60ch; color: var(--ink-2); }
 /* 흐림(backdrop-filter)은 움직이는 3D 배경 위에서 매 프레임 다시 계산되어 무겁다 → 불투명도를 높여 대신한다 */
-.panel { position: relative; background: var(--panel); border: 1px solid var(--line); }
+.panel { position: relative; background: var(--panel); border: 1px solid var(--line-2); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38); }
 .ticks::before, .ticks::after { content: ''; position: absolute; width: 12px; height: 12px; border: 1px solid var(--accent-2); pointer-events: none; }
 .ticks::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
 .ticks::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
@@ -335,8 +333,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width
 /* ── 퀴즈 ───────────────────────── */
 .quiz { max-width: 980px; margin: 0 auto; }
 .q-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin: 26px 0 18px; }
-.seg { display: inline-flex; border: 1px solid var(--line-2); }
-.seg button { background: none; border: 0; padding: 8px 14px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.seg button { padding: 8px 14px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .score { font-family: var(--mono); font-size: 13px; color: var(--ink-2); display: flex; gap: 18px; }
 .score b { color: var(--accent-2); font-weight: 500; }
@@ -447,9 +445,8 @@ body.focus3d .focus-bar { pointer-events: auto; }
 .fam-list button b { font-weight: 500; }
 .fam-list button small { color: var(--muted); font-size: 11px; }
 .fam-list button:hover { border-color: var(--accent-2); }
-.toolbar { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line-2); margin-bottom: 14px; }
-.tool { background: none; border: 0; padding: 9px 4px; cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
-.tool + .tool { border-left: 1px solid var(--line-2); }
+.toolbar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 16px; }
+.tool { padding: 9px 2px; cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
 .tool:hover { color: var(--ink); }
 .tool[aria-checked="true"] { background: var(--accent); color: #fff; }
 .palette-wrap .lbl { margin: 12px 0 6px; }
@@ -636,7 +633,7 @@ svg.mol .m-ct { fill: var(--warn); font-size: 12px; font-family: var(--body); fo
 .tab-panel[hidden] { display: none !important; }
 .tab-panel .tbl-wrap, .tab-panel .pairs { margin: 0; }
 .tab-lead { margin: 0; color: var(--muted); font-size: 13px; }
-.tabs .tabs .tab-bar > button { min-height: 32px; font-size: 12.5px; background: none; }
+.tabs .tabs .tab-bar > button { min-height: 32px; font-size: 12.5px; }
 .rules > .tabs { margin-top: 10px; }
 .rules .rule-step { border-top: 0; padding-top: 26px; }
 .step-nav { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
@@ -644,7 +641,7 @@ svg.mol .m-ct { fill: var(--warn); font-size: 12px; font-family: var(--body); fo
 /* 분자 조립: 시작 분자 접기 */
 .blk-scaf > summary { cursor: pointer; list-style-position: inside; margin: 0; }
 .blk-scaf[open] > summary { margin-bottom: 12px; }
-.palette-wrap .tab-bar > button { min-height: 30px; padding: 0 9px; font-size: 12px; background: none; }
+.palette-wrap .tab-bar > button { min-height: 30px; padding: 0 9px; font-size: 12px; }
 .palette-wrap .tabs { gap: 8px; margin-top: 12px; }
 
 /* ── 버그 제보함 ─────────────── */
@@ -718,3 +715,72 @@ svg.mol .m-ct { fill: var(--warn); font-size: 12px; font-family: var(--body); fo
 .q-topics-box[open] > summary small { display: none; }
 .menu-log { position: absolute; right: calc(var(--gut) + 6vw); bottom: calc(var(--hud-h) + 14px); font-size: 12px; letter-spacing: 0.12em; color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--line-2); padding-bottom: 2px; }
 .menu-log:hover, .menu-log:focus-visible { color: var(--ink); border-color: var(--accent-2); }
+
+/* ── 키캡: 고르는 버튼은 키보드 숫자 키처럼 도톰하게 솟아 있고, 누르면 들어간다 ── */
+:root {
+  --key-face: linear-gradient(180deg, #2a3c69 0%, #1b2849 48%, #141e3a 100%);
+  --key-face-hover: linear-gradient(180deg, #33487c 0%, #213058 48%, #18244a 100%);
+  --key-line: rgba(150, 185, 255, 0.36);
+  --key-edge: #02050c;
+  --key-hi: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -4px 0 rgba(0, 0, 0, 0.3);
+  --key-on: linear-gradient(180deg, #3d92ff 0%, #2269dc 100%);
+  --key-on-edge: #0d357d;
+}
+.tool, .scaf, .chip, .btn:not(.link), .tab-bar > button, .seg button, .q-areas button, .q-topics button, .q-opt,
+.rx-cats button, .rx-btn, .ex-chips button, .rs-tabs button, .bug-kinds span, .fam-select {
+  background: var(--key-face); border: 1px solid var(--key-line); border-radius: 7px;
+  box-shadow: var(--key-hi), 0 3px 0 var(--key-edge), 0 7px 14px rgba(0, 0, 0, 0.5);
+  transform: translateY(0); transition: transform 0.07s ease-out, box-shadow 0.07s ease-out, background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.tool:hover, .scaf:hover, .chip:hover, .btn:not(.link):hover, .tab-bar > button:hover, .seg button:hover, .q-areas button:hover, .q-topics button:hover, .q-opt:hover:not(:disabled),
+.rx-cats button:hover, .rx-btn:hover, .ex-chips button:hover, .rs-tabs button:hover, .bug-kinds label:hover span, .fam-select:hover {
+  background: var(--key-face-hover); border-color: var(--accent-2); color: var(--ink);
+}
+/* 누르는 순간: 한 단 들어감 */
+.tool:active, .scaf:active, .chip:active, .btn:not(.link):active:not(:disabled), .tab-bar > button:active, .seg button:active, .q-areas button:active, .q-topics button:active, .q-opt:active:not(:disabled),
+.rx-cats button:active, .rx-btn:active, .ex-chips button:active, .rs-tabs button:active, .bug-kinds label:active span {
+  transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 0 rgba(0, 0, 0, 0.3), 0 1px 0 var(--key-edge), 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+/* 골라 둔 키: 파랗게 켜진 채 눌려 있음 */
+.tool[aria-checked="true"], .chip[aria-checked="true"], .tab-bar > button[aria-selected="true"], .seg button[aria-pressed="true"], .q-areas button[aria-selected="true"],
+.q-topics button[aria-checked="true"], .rx-cats button[aria-selected="true"], .rx-btn.on, .rs-tabs button[aria-selected="true"], .bug-kinds input:checked + span, .btn[aria-pressed="true"] {
+  background: var(--key-on); border-color: #62a8ff; color: #fff;
+  transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 1px 0 var(--key-on-edge), 0 0 16px rgba(47, 134, 255, 0.5);
+}
+.q-topics button[aria-checked="true"] small, .rx-cats button[aria-selected="true"] small, .rx-btn.on small, .q-topics button[aria-checked="true"] .q-st { color: rgba(255, 255, 255, 0.82); }
+/* 주 동작 버튼: 파란 키 (안 눌린 상태) */
+.btn.solid { background: var(--key-on); border-color: #62a8ff; color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 3px 0 var(--key-on-edge), 0 7px 14px rgba(47, 134, 255, 0.3); }
+.btn.solid:hover { background: linear-gradient(180deg, #4d9bff 0%, #2a74e8 100%); border-color: #8cc0ff; }
+.btn.solid:active:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 0 var(--key-on-edge); }
+.btn:disabled, .btn:disabled:hover { transform: none; background: var(--key-face); border-color: var(--line); color: var(--ink-2); box-shadow: var(--key-hi), 0 2px 0 var(--key-edge); }
+/* 채점된 보기 */
+.q-opt.right { background: linear-gradient(180deg, rgba(95, 224, 180, 0.22), rgba(95, 224, 180, 0.1)); border-color: var(--ok); }
+.q-opt.wrong { background: linear-gradient(180deg, rgba(255, 125, 140, 0.22), rgba(255, 125, 140, 0.1)); border-color: var(--bad); }
+.q-opt:disabled { transform: none; }
+.rx-cats button.dim, .rx-btn.dim { box-shadow: var(--key-hi), 0 2px 0 var(--key-edge); }
+/* 조각 팔레트 · 기본 골격: 숫자 키패드처럼 네모 키 */
+.palette { grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.chip { clip-path: none; height: 44px; color: var(--ink-2); }
+.chip::before { display: none; }
+.chip[aria-checked="true"] { color: #fff; }
+.scafs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; overflow: visible; margin: 0; padding: 0 0 3px; }
+.scaf { flex: initial; padding: 10px 4px 9px; font-size: 12px; color: var(--ink-2); }
+.scaf .hx { background: none; width: 44px; height: 36px; }
+.scaf .hx::before { display: none; }
+.scaf svg { width: 30px; height: 30px; color: var(--accent-3); }
+.fam-lbl { display: block; margin-top: 18px; }
+.fam-select { width: 100%; min-height: 40px; padding: 0 12px; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  background-image: var(--key-face); }
+.fam-select option { background: #101a33; color: var(--ink); }
+.tools-row { gap: 9px; }
+.q-opts, .rx-list { gap: 10px; }
+.rx-cats { gap: 7px; }
+.tab-bar { gap: 7px; }
+.ex-chips { gap: 7px; }
+.bug-kinds { gap: 8px; }
+.bug-kinds span { display: inline-block; padding: 6px 11px; }
+.rs-tabs { gap: 7px; }
+.q-areas button { border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .tool, .scaf, .chip, .btn, .tab-bar > button, .seg button, .q-areas button, .q-topics button, .q-opt, .rx-cats button, .rx-btn, .ex-chips button, .rs-tabs button { transition: none; }
+}

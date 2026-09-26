@@ -16,7 +16,7 @@ with sync_playwright() as pw:
     p.goto(f'http://127.0.0.1:{PORT}/index.html#build'); time.sleep(3)
     p.evaluate('localStorage.clear()'); p.reload(); time.sleep(3)
     p.evaluate("""() => { window.__lt = []; new PerformanceObserver(l => l.getEntries().forEach(e => window.__lt.push(e.duration))).observe({ entryTypes: ['longtask'] }); }""")
-    p.click('.famous summary'); p.click('.fam-list [data-t="capsaicin"]'); time.sleep(1.5)
+    p.select_option('#fam', 'capsaicin'); time.sleep(1.5)
     cdp = p.context.new_cdp_session(p)
     cdp.send('Profiler.enable'); cdp.send('Profiler.setSamplingInterval', {'interval': 200}); cdp.send('Profiler.start')
     rows = []

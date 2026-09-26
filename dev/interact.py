@@ -57,7 +57,7 @@ with sync_playwright() as pw:
     p.click('.tool[data-tool="add"]'); chip('phenyl'); p.click('.svgwrap [data-atom="0"]'); time.sleep(0.4)
     print('cyclohexylbenzene:', name())
     # 유명한 분자
-    p.click('.famous summary'); p.click('.fam-list [data-t="capsaicin"]'); time.sleep(0.6)
+    p.select_option('#fam', 'capsaicin'); time.sleep(0.6)
     print('capsaicin:', name(), '|', p.inner_text('.name-common') if p.query_selector('.name-common') else '')
     p.screenshot(path=str(OUT / 'act_build_big.png'))
     p.click('.seg.small [data-mode="skeletal"]'); time.sleep(0.4)
@@ -66,7 +66,7 @@ with sync_playwright() as pw:
     # 빠르게 여러 분자 고르기: 50ms 넘는 긴 작업이 몇 번인지
     p.evaluate("window.__lt = []; new PerformanceObserver(l => l.getEntries().forEach(e => window.__lt.push(Math.round(e.duration)))).observe({ type: 'longtask', buffered: false })")
     ids = ['ibuprofen', 'menthol', 'capsaicin', 'citric', 'tnt', 'aspirin', 'carvone', 'dopamine', 'geraniol', 'vanillin']
-    for t in ids: p.click(f'.fam-list [data-t="{t}"]'); time.sleep(0.07)
+    for t in ids: p.select_option('#fam', t); time.sleep(0.07)
     time.sleep(1.5)
     print('rapid 10 clicks → long tasks (ms):', p.evaluate('window.__lt'))
     # R/S: 뷰테인 C2 에 OH → 입체중심, R/S 도구로 뒤집기
@@ -91,7 +91,7 @@ with sync_playwright() as pw:
     p.click('.tool[data-tool="add"]')
     # 유명한 분자의 R/S
     for t in ['menthol', 'alanine', 'carvone', 'limonene']:
-        p.click(f'.fam-list [data-t="{t}"]'); time.sleep(0.4); print(f'{t}:', name(), '|', p.inner_text('.name-common') if p.query_selector('.name-common') else '')
+        p.select_option('#fam', t); time.sleep(0.4); print(f'{t}:', name(), '|', p.inner_text('.name-common') if p.query_selector('.name-common') else '')
     # 무작위
     for k in range(3): p.click('#b-rand'); time.sleep(0.3); print('rand:', name())
     # 언어
