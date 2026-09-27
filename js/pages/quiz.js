@@ -555,9 +555,9 @@ function msfragQ() {
     const nonCC = cand.filter(x => x.main.f.proc !== 'cc');
     const p = pick(nonCC.length && Math.random() < 0.75 ? nonCC : cand), f = p.main.f;
     const dm = ms.M - p.mz;
-    const pic = done => `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true, hl: done ? new Set(f.atoms) : new Set(), hlDots: true })}</div><div class="q-spec">${msSVG(ms, { mark: p.mz, tips: false })}</div>`;
+    const pic = done => `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true, hl: done ? new Set(f.atoms) : new Set(), lost: done ? new Set((f.mark || {}).lost || []) : null, cuts: done ? (f.mark || {}).cut : null, hs: done ? ((f.mark || {}).hs || []).filter(h => h[0] !== undefined) : null, hlDots: true })}</div><div class="q-spec">${msSVG(ms, { mark: p.mz, tips: false })}</div>`;
     const base = { e: s.e, mol3d: s.e, open: ['spectra', { mol: s.e.mol }], head: pic };
-    const tail = `<p class="note">m/z ${p.mz} = <span class="mono">${esc(f.text)}</span>${f.lost ? ` · 떨어진 조각 <span class="mono">${esc(f.lost)}</span> (${f.proc === 'sec' ? '조각 이온에서' : 'M − ' + dm})` : ''}. ${esc(PROC[f.proc].d)}</p><p class="hint">초록색: 이 이온에 남은 원자</p>`;
+    const tail = `<p class="note">m/z ${p.mz} = <span class="mono">${esc(f.text)}</span>${f.lost ? ` · 떨어진 조각 <span class="mono">${esc(f.lost)}</span> (${f.proc === 'sec' ? '조각 이온에서' : 'M − ' + dm})` : ''}. ${esc(PROC[f.proc].d)}</p><p class="hint">초록: 이 이온에 남은 원자 · 빨간 점선: 떨어진 조각 · −H / +H: 수소가 떨어지거나 옮겨 간 자리</p>`;
     if (f.proc !== 'sec' && f.lost && Math.random() < 0.45) {
       const opts = [{ key: 'ans', label: esc(f.lost), m: dm }];
       for (const [txt, mm] of shuffle(LOSS.slice())) { if (opts.length >= 4) break; if (opts.every(o => o.m !== mm && o.label !== txt) && mm < ms.M) opts.push({ key: txt, label: txt, m: mm }); }

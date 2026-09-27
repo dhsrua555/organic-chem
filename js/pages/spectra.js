@@ -3,8 +3,8 @@
    누르면 강조를 고정한다 */
 import { fromSmiles } from '../chem/edit.js';
 import { makeMol, toSmiles } from '../chem/core.js';
-import { irBands, irChecks, massSpec, isoPattern, IR_TABLE, MS_LOSSES, MS_IONS, STR_KO } from '../chem/spectra.js';
-import { irSVG, msSVG, irTableHTML, msTableHTML } from '../specview.js';
+import { irBands, irChecks, massSpec, isoPattern, PROC } from '../chem/spectra.js';
+import { irSVG, msSVG, irTableHTML, msTableHTML, refTabsHTML } from '../specview.js';
 import { drawMolecule } from '../draw.js';
 import { entry, esc, store, getLang, onLang, tabsHTML, drawMode, formulaHTML, tokensHTML } from '../ui.js';
 
@@ -13,7 +13,7 @@ export const SPEC_EX = [
   ['알케인 · 알켄 · 알카인', [['CCCCCC', '헥세인'], ['CC(C)CCC', '2-메틸펜테인'], ['C1CCCCC1', '사이클로헥세인'], ['C=CCCCC', '헥스-1-엔'], ['C/C=C/CC', '(E)-펜트-2-엔'], ['C1=CCCCC1', '사이클로헥센'], ['C#CCCCC', '헥스-1-아인'], ['CCC#CCC', '헥스-3-아인']]],
   ['방향족 탄화수소', [['Cc1ccccc1', '톨루엔'], ['CCc1ccccc1', '에틸벤젠'], ['Cc1ccccc1C', 'o-자일렌'], ['Cc1ccc(C)cc1', 'p-자일렌']]],
   ['할로젠화물', [['CCCBr', '1-브로모프로페인'], ['CC(C)Cl', '2-클로로프로페인'], ['CCCCCl', '1-클로로뷰테인'], ['Brc1ccccc1', '브로모벤젠']]],
-  ['알코올 · 페놀 · 에터', [['CCCCO', '뷰탄-1-올'], ['CCC(C)O', '뷰탄-2-올'], ['CC(C)(C)O', '2-메틸프로판-2-올'], ['OC1CCCCC1', '사이클로헥산올'], ['Oc1ccccc1', '페놀'], ['CCOCC', '다이에틸 에터'], ['COc1ccccc1', '아니솔'], ['CC(C)(C)OC', 'tert-뷰틸 메틸 에터']]],
+  ['알코올 · 페놀 · 에터', [['CCCCO', '뷰탄-1-올'], ['CCC(C)O', '뷰탄-2-올'], ['CC(C)(C)O', '2-메틸프로판-2-올'], ['OC1CCCCC1', '사이클로헥산올'], ['OCc1ccccc1', '벤질 알코올'], ['Oc1ccccc1', '페놀'], ['CCOCC', '다이에틸 에터'], ['COc1ccccc1', '아니솔'], ['CC(C)(C)OC', 'tert-뷰틸 메틸 에터']]],
   ['아민 · 나이트로 화합물', [['CCCCN', '뷰탄-1-아민'], ['CCNCC', '다이에틸아민'], ['Nc1ccccc1', '아닐린'], ['[O-][N+](=O)c1ccccc1', '나이트로벤젠']]],
   ['알데하이드 · 케톤', [['CCCC=O', '뷰탄알'], ['O=Cc1ccccc1', '벤즈알데하이드'], ['CCC(C)=O', '뷰탄-2-온'], ['CCCCC(C)=O', '헥산-2-온'], ['O=C1CCCCC1', '사이클로헥산온'], ['O=C1CCCC1', '사이클로펜탄온'], ['CC(=O)c1ccccc1', '아세토페논'], ['CC=CC(C)=O', '펜트-3-엔-2-온']]],
   ['카복실산과 유도체', [['CCC(=O)O', '프로판산'], ['CCCC(=O)O', '뷰탄산'], ['OC(=O)c1ccccc1', '벤조산'], ['CCOC(C)=O', '아세트산 에틸'], ['CCCC(=O)OC', '뷰탄산 메틸'], ['COC(=O)c1ccccc1', '벤조산 메틸'], ['CC(N)=O', '아세트아마이드'], ['CCCC(N)=O', '뷰탄아마이드'], ['CC(Cl)=O', '아세틸 클로라이드']]],
@@ -41,6 +41,7 @@ export function mount(root, app, params) {
         <div class="panel ticks sp-mol">
           <p class="lbl">화합물</p>
           <div class="sp-svg"></div>
+          <div class="sp-sel" aria-live="polite" hidden></div>
           <p class="sp-name"></p>
           <dl class="sp-facts"></dl>
           <div class="tools-row"><button class="btn" type="button" id="s-from">편집기의 구조 가져오기</button><button class="btn" type="button" id="s-edit">편집기에서 수정</button></div>
@@ -62,18 +63,41 @@ export function mount(root, app, params) {
     catch (e) { S.ir = null; S.ms = null; S.err = e.message || String(e); }
     store.set('spectra', { mol: pack(S.mol) });
   }
-  /* 강조할 원자: 흡수 띠 번호 또는 m/z */
-  const atomsOf = key => {
-    if (!key) return new Set();
-    if (key.kind === 'band') return new Set((S.ir[key.i] || { atoms: [] }).atoms);
+  /* 가리킨 흡수 띠 · 피크: 구조식에 칠할 원자(이온에 남은 원자 · 떨어진 조각 · 끊어진 결합 · 수소 이동)와 설명 */
+  const LEG = { ion: '<i class="lg-ion"></i>이온에 남은 원자', lost: '<i class="lg-lost"></i>떨어진 조각 · 끊어진 결합', hs: '<i class="lg-hs">−H</i>수소가 떨어지거나 옮겨 간 자리', band: '<i class="lg-ion"></i>이 흡수를 내는 결합 · 원자' };
+  const selOf = key => {
+    if (!key) return null;
+    if (key.kind === 'band') {
+      const b = S.ir[key.i];
+      return b && { hl: new Set(b.atoms), cap: `<b>${key.i + 1}번 흡수 · ${b.nu} cm⁻¹</b> ${esc(b.vib)} (${esc(b.grp)})`, why: b.note ? esc(b.note) : '', leg: ['band'] };
+    }
     const p = S.ms.peaks.find(x => x.mz === key.mz);
-    const own = S.ms.ions.filter(f => f.mz === key.mz);
-    return new Set(own.length ? own.flatMap(f => f.atoms) : p ? p.main.f.atoms : []);
+    let f = key.ion !== undefined ? S.ms.ions[key.ion] : p && p.main.f, off = key.ion !== undefined || !p ? 0 : p.main.off;
+    if (!f) return null;
+    const mk = f.mark || {}, rel = p ? p.rel : f.rel, dm = S.ms.M - f.mz;
+    let cap, why;
+    if (off === 0) {
+      cap = `<b>m/z ${key.mz}</b> · ${pct(rel)}% — <span class="mono">${esc(f.text)}</span>`;
+      why = f.proc === 'M' ? '분자 이온: 분자에서 전자 하나만 떨어진 라디칼 양이온이라 원자는 모두 그대로입니다.'
+        : `${esc(PROC[f.proc].ko)}${f.lost ? ` · <span class="mono">${esc(f.lost)}</span> 이탈` : ''}${f.proc === 'sec' && f.from ? ` (<span class="mono">${esc(f.from)}</span> 에서)` : f.lost ? ` (M − ${dm})` : ''}${f.n > 1 ? `. 같은 이온을 주는 자리가 ${f.n}곳이라 그중 하나를 표시했습니다` : ''}.`;
+    } else {
+      const c = f.c, nC = c.C || 0;
+      cap = `<b>m/z ${key.mz}</b> · ${pct(rel)}% — m/z ${f.mz} 이온의 동위원소 피크 (+${off})`;
+      why = off === 1 ? `¹³C 가 하나 든 같은 이온입니다 (탄소 ${nC}개 × 1.1% ≈ ${(nC * 1.1).toFixed(1)}%). 원자가 더 붙거나 떨어진 것이 아니라 원자 하나의 중성자가 하나 많은 것이어서 구조는 m/z ${f.mz} 과 같고, 어느 탄소든 ¹³C 일 수 있습니다.`
+        : off === 2 && (c.Cl || c.Br) ? `${c.Br ? '⁸¹Br' : '³⁷Cl'} 이 든 같은 이온입니다. 브로민 · 염소는 무거운 동위원소가 많아 M+2 피크가 큽니다.`
+          : off === 2 ? `¹³C 두 개 또는 ¹⁸O 하나가 든 같은 이온입니다. 구조는 m/z ${f.mz} 과 같습니다.` : `무거운 동위원소가 여러 개 든 같은 이온입니다. 구조는 m/z ${f.mz} 과 같습니다.`;
+    }
+    const hs = (mk.hs || []).filter(h => h[0] !== undefined && h[0] >= 0);
+    return { hl: new Set(f.atoms), lost: new Set(mk.lost || []), cuts: mk.cut || [], hs, cap, why, leg: ['ion', (mk.lost || []).length || (mk.cut || []).length ? 'lost' : null, hs.length ? 'hs' : null].filter(Boolean) };
   };
   function paintMol(key) {
     const r = S.e.res, ko = getLang() === 'ko';
     const lite = r ? { ...r, principalAtoms: new Set() } : null;
-    q('.sp-svg').innerHTML = drawMolecule(S.mol, lite, { mode: drawMode(), locants: false, chain: false, hl: atomsOf(key), hlDots: true, compact: true });
+    const sel = S.ir ? selOf(key) : null;
+    q('.sp-svg').innerHTML = drawMolecule(S.mol, lite, { mode: drawMode(), locants: false, chain: false, hl: sel ? sel.hl : new Set(), lost: sel && sel.lost, cuts: sel && sel.cuts, hs: sel && sel.hs, hlDots: true, compact: true });
+    const box = q('.sp-sel');
+    box.hidden = !sel;
+    box.innerHTML = sel ? `<p class="sp-cap">${sel.cap}</p>${sel.why ? `<p class="sp-why">${sel.why}</p>` : ''}<p class="sp-leg">${sel.leg.map(k => `<span>${LEG[k]}</span>`).join('')}</p>` : '';
     const cm = S.e.common;
     q('.sp-name').innerHTML = r ? `<span class="mono">${tokensHTML(ko ? r.ko : r.en)}</span><small>${esc(ko ? r.nameEn : r.nameKo)}${cm ? ' · ' + esc(ko ? cm.ko : cm.en) : ''}</small>` : `<span class="muted">${esc(S.e.err || '이름을 붙일 수 없는 구조')}</span>`;
     /* 그림 · 표의 강조 표시 */
@@ -116,15 +140,7 @@ export function mount(root, app, params) {
       ${ms.alts.length > 1 ? `<div class="panel sp-list"><p class="lbl">고분해능 질량 분석 (HRMS) — 정수 질량 ${ms.M} 의 분자식 후보</p>
         <div class="tbl-wrap"><table class="tbl sp-tbl"><thead><tr><th>분자식</th><th>정밀 질량</th><th>불포화도</th></tr></thead><tbody>${ms.alts.map(a => `<tr${a.self ? ' class="self"' : ''}><td class="m">${a.f}${a.self ? ' <small>이 화합물</small>' : ''}</td><td class="m">${a.exact.toFixed(4)}</td><td class="m">${a.ihd}</td></tr>`).join('')}</tbody></table></div>
         <p class="hint">정수 질량이 같아도 ¹H 1.0078 · ¹⁶O 15.9949 · ¹⁴N 14.0031 처럼 원자의 정밀 질량이 달라, 소수점 넷째 자리까지 재면 분자식을 하나로 정할 수 있습니다.</p></div>` : ''}`;
-    const refHTML = `<div class="panel sp-list"><p class="lbl">IR 흡수 상관표</p>
-        <div class="tbl-wrap"><table class="tbl sp-tbl"><thead><tr><th>진동</th><th>작용기</th><th>파수 cm⁻¹</th><th>세기 · 모양</th></tr></thead><tbody>${IR_TABLE.map(t => `<tr><td>${esc(t.bond)}${t.note ? `<small>${esc(t.note)}</small>` : ''}</td><td>${esc(t.grp)}</td><td class="m">${t.range[0]}–${t.range[1]}</td><td>${STR_KO[t.str]}${t.shape ? ' · ' + esc(t.shape) : ''}</td></tr>`).join('')}</tbody></table></div>
-        <ul class="sel sp-rules"><li>흡수 파수는 결합이 강할수록(삼중 &gt; 이중 &gt; 단일), 원자가 가벼울수록(X–H) 높습니다 — 훅의 법칙 ν̃ ∝ √(k/μ).</li><li>짝지음(공액)된 C=O · C=C 는 이중결합성이 줄어 약 20–30 cm⁻¹ 낮아집니다.</li><li>쌍극자 모멘트가 변하지 않는 진동(대칭 알카인 · 알켄)은 흡수가 거의 없습니다.</li><li>1500 cm⁻¹ 위(작용기 영역)로 작용기를 찾고, 아래(지문 영역)는 같은 화합물인지 확인하는 데 씁니다.</li></ul></div>
-      <div class="panel sp-list"><p class="lbl">질량 스펙트럼 읽는 규칙</p>
-        <ul class="sel sp-rules"><li><b>분자 이온 M⁺•</b>: 전자 하나를 잃은 라디칼 양이온으로 m/z 가 정수 질량(분자량)과 같습니다.</li><li><b>기준 피크</b>: 가장 센 피크를 100 으로 두고 나머지를 상대 세기로 나타냅니다.</li>
-          <li><b>질소 규칙</b>: M 이 홀수이면 질소가 홀수 개입니다.</li><li><b>M+1</b>: ¹³C 때문에 탄소 하나당 약 1.1%.</li><li><b>M+2</b>: 염소 M : M+2 ≈ 3 : 1, 브로민 ≈ 1 : 1.</li>
-          <li><b>불포화도</b> = (2C + 2 + N − H − X) ÷ 2 = 고리 수 + π 결합 수.</li><li><b>조각화</b>: 더 안정한 양이온(3차 · 알릴 · 벤질 · 아실륨 · 옥소늄 · 이미늄)과 더 큰 라디칼이 생기는 쪽으로 끊어집니다.</li></ul></div>
-      <div class="panel sp-list"><p class="lbl">자주 보이는 중성 조각 손실</p><div class="tbl-wrap"><table class="tbl sp-tbl"><thead><tr><th>피크</th><th>잃은 조각</th><th>예상 구조</th></tr></thead><tbody>${MS_LOSSES.map(r => `<tr><td class="m">${r[0]}</td><td class="m">${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table></div></div>
-      <div class="panel sp-list"><p class="lbl">자주 보이는 조각 이온</p><div class="tbl-wrap"><table class="tbl sp-tbl"><thead><tr><th>m/z</th><th>이온</th><th>기원</th></tr></thead><tbody>${MS_IONS.map(r => `<tr><td class="m">${r[0]}</td><td class="m">${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table></div></div>`;
+    const refHTML = refTabsHTML(ir);
     box.innerHTML = tabsHTML('spec', [
       { id: 'ir', label: 'IR 스펙트럼', n: ir.length, html: irHTML },
       { id: 'ms', label: '질량 스펙트럼', n: ms.ions.length, html: msHTML },
@@ -139,8 +155,8 @@ export function mount(root, app, params) {
   }
 
   /* 가리키면 미리 보기, 누르면 고정 */
-  const keyOf = el => el.dataset.band !== undefined ? { kind: 'band', i: +el.dataset.band } : { kind: 'mz', mz: +el.dataset.mz };
-  const same = (a, b) => a && b && a.kind === b.kind && (a.kind === 'band' ? a.i === b.i : a.mz === b.mz);
+  const keyOf = el => el.dataset.band !== undefined ? { kind: 'band', i: +el.dataset.band } : Object.assign({ kind: 'mz', mz: +el.dataset.mz }, el.dataset.ion !== undefined ? { ion: +el.dataset.ion } : {});
+  const same = (a, b) => a && b && a.kind === b.kind && (a.kind === 'band' ? a.i === b.i : a.mz === b.mz && a.ion === b.ion);
   let hover = null;
   const target = e => e.target.closest && e.target.closest('.sp-right [data-band], .sp-right [data-mz]');
   root.addEventListener('mouseover', e => { const t = target(e); const k = t ? keyOf(t) : null; if (same(k, hover) || (!k && !hover)) return; hover = k; paintMol(k || S.pin); });

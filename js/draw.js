@@ -40,6 +40,8 @@ export function drawMolecule(mol, res, opts = {}) {
   const W = opts.stars === false ? new Map() : wedges(mol);
   const pri = res ? res.principalAtoms || new Set() : new Set();
   const hl = opts.hl || new Set();
+  /* 분광: 떨어진 조각(lost) · 끊어진 결합(cuts [[a, b]]) · 수소가 옮겨 간 자리(hs [[원자, ±1]]) */
+  const lostS = opts.lost || new Set(), cutK = new Set((opts.cuts || []).map(([a, b]) => a < b ? a + '-' + b : b + '-' + a));
   const labels = A.map((_, i) => labelOf(mol, i, mode));
   const shrink = i => labels[i] ? 0.3 : 0;
   const box = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
@@ -64,7 +66,8 @@ export function drawMolecule(mol, res, opts = {}) {
     const dx = Q.x - P.x, dy = Q.y - P.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
     const sa = shrink(b.a), sb = shrink(b.b);
     const x1 = P.x + ux * sa, y1 = P.y + uy * sa, x2 = Q.x - ux * sb, y2 = Q.y - uy * sb;
-    const hot = pri.has(b.a) && pri.has(b.b) ? ' pri' : (hl.has(b.a) && hl.has(b.b) ? ' hl' : '');
+    const isCut = cutK.has(b.a < b.b ? b.a + '-' + b.b : b.b + '-' + b.a);
+    const hot = pri.has(b.a) && pri.has(b.b) ? ' pri' : isCut ? ' cut' : (lostS.has(b.a) && lostS.has(b.b) ? ' lost' : hl.has(b.a) && hl.has(b.b) ? ' hl' : '');
     const cls = 'm-b' + hot;
     const line = (a1, b1, a2, b2, c = cls) => `<line class="${c}" x1="${r1(X(a1))}" y1="${r1(Y(b1))}" x2="${r1(X(a2))}" y2="${r1(Y(b2))}"/>`;
     const nx = -uy, ny = ux;
@@ -107,13 +110,14 @@ export function drawMolecule(mol, res, opts = {}) {
         out.bonds.push(line(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o), line(x1 - nx * o, y1 - ny * o, x2 - nx * o, y2 - ny * o));
       }
     }
+    if (isCut) { const mx = (P.x + Q.x) / 2, my = (P.y + Q.y) / 2, h = 0.2; out.marks.push(`<line class="m-cutx" x1="${r1(X(mx + nx * h + ux * 0.07))}" y1="${r1(Y(my + ny * h + uy * 0.07))}" x2="${r1(X(mx - nx * h - ux * 0.07))}" y2="${r1(Y(my - ny * h - uy * 0.07))}"/>`); }
     if (opts.interactive) out.hits.push(`<line class="hit-b" data-bond="${k}" x1="${r1(X(P.x))}" y1="${r1(Y(P.y))}" x2="${r1(X(Q.x))}" y2="${r1(Y(Q.y))}" role="button" tabindex="-1" aria-label="${b.a + 1}–${b.b + 1} 결합"/>`);
   });
   /* 원자 */
   A.forEach((a, i) => {
     grow(a.x, a.y, 0.45);
     const lab = labels[i];
-    const cls = 'm-at' + (pri.has(i) ? ' pri' : hl.has(i) ? ' hl' : '') + (a.el !== 'C' ? ' het' : '');
+    const cls = 'm-at' + (pri.has(i) ? ' pri' : lostS.has(i) ? ' lost' : hl.has(i) ? ' hl' : '') + (a.el !== 'C' ? ' het' : '');
     if (lab) {
       const w = seqWidth(lab.seq);
       const x0 = X(a.x) - seqX(lab.seq, lab.elIdx);
@@ -122,7 +126,7 @@ export function drawMolecule(mol, res, opts = {}) {
       grow(x0 / U, a.y, 0.3); grow((x0 + w) / U, a.y, 0.3);
     }
     /* 골격식의 꼭짓점 탄소는 글자가 없어 강조가 안 보이므로 점으로 (hlDots) */
-    if (opts.hlDots && hl.has(i) && !lab && !pri.has(i)) out.band.push(`<circle class="m-hlc" cx="${r1(X(a.x))}" cy="${r1(Y(a.y))}" r="${U * 0.17}"/>`);
+    if (opts.hlDots && (hl.has(i) || lostS.has(i)) && !lab && !pri.has(i)) out.band.push(`<circle class="m-hlc${lostS.has(i) ? ' lost' : ''}" cx="${r1(X(a.x))}" cy="${r1(Y(a.y))}" r="${U * 0.17}"/>`);
     if (opts.interactive) {
       const name = a.el + (a.h ? 'H' + (a.h > 1 ? a.h : '') : '');
       out.hits.push(`<g class="hit-a${opts.pick === i ? ' on' : ''}" data-atom="${i}" role="button" tabindex="0" aria-label="${i + 1}번 원자 ${name}${a.h ? '' : ' (H 없음)'}"><polygon points="${hexPts(a.x, a.y, 0.34)}"/></g>`);
@@ -197,6 +201,15 @@ export function drawMolecule(mol, res, opts = {}) {
   if (opts.mark !== undefined && opts.mark !== null && A[opts.mark]) {
     const a = A[opts.mark];
     out.band.push(`<circle class="m-mark" cx="${r1(X(a.x))}" cy="${r1(Y(a.y))}" r="${U * 0.42}"/>`);
+  }
+  /* −H · +H: 수소가 떨어지거나 옮겨 온 자리 */
+  for (const [i, d] of opts.hs || []) {
+    const a = A[i]; if (!a) continue;
+    const dirs = mol.nb[i].map(({ j }) => Math.atan2(A[j].y - a.y, A[j].x - a.x) / RAD);
+    const f = freeAngle(dirs), rr = labels[i] ? 0.72 : 0.5;
+    const hx = a.x + Math.cos(f * RAD) * rr, hy = a.y + Math.sin(f * RAD) * rr;
+    out.marks.push(`<text class="m-hs${d > 0 ? ' plus' : ''}" x="${r1(X(hx))}" y="${r1(Y(hy) + 4)}" text-anchor="middle">${d > 0 ? '+H' : '−H'}</text>`);
+    grow(hx, hy, 0.3);
   }
   const pad = 0.35;
   const w = Math.max(box.x1 - box.x0 + 2 * pad, 2.4), h = Math.max(box.y1 - box.y0 + 2 * pad, 1.6);

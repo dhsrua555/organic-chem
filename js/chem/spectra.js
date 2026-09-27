@@ -204,7 +204,7 @@ export function irBands(mol) {
     }
     if (x.kind === 'amide') note = (note ? note + ' ' : '') + '아마이드는 질소의 비공유 전자쌍과 공명해 C=O 가 약해지므로 가장 낮은 쪽에 나타납니다 (아마이드 I 띠).';
     if (x.kind === 'acylhalide') note = (note ? note + ' ' : '') + '전기음성도가 큰 할로젠이 C=O 를 강하게 만들어 가장 높은 쪽에 나타납니다.';
-    add(band('CO', 'C=O 신축', T.grp, range, 's', [[nu, 1.45, 11]], { atoms: [c, x.o], note: note || '1800–1650 cm⁻¹ 의 가장 강한 흡수 가운데 하나로, 카보닐 화합물 확인의 기준입니다.' }));
+    add(Object.assign(band('CO', 'C=O 신축', T.grp, range, 's', [[nu, 1.45, 11]], { atoms: [c, x.o], note: note || '1800–1650 cm⁻¹ 의 가장 강한 흡수 가운데 하나로, 카보닐 화합물 확인의 기준입니다.' }), { kind: x.kind }));
     if (x.kind === 'ketone' && !conj && cNb(m, c).length === 2) add(band('CCOs', 'C–CO–C 신축', '케톤', [1230, 1100], 'm', [[1170, 0.4, 20]], { atoms: [c, ...cNb(m, c)], diag: false }));
     if (x.kind === 'ester') add(band('COs', 'C–O 신축', '에스터', [1300, 1000], 's', [[1240, 1.0, 18], [1050, 0.7, 18]], { shape: '두 흡수 띠', atoms: [c, ...x.f.OR.flatMap(r => [r.o, r.c])], diag: false }));
     if (x.kind === 'acid') {
@@ -331,6 +331,20 @@ export function irChecks(bands) {
   ];
 }
 /* 연습 문제용: 진단에 쓰는 흡수 띠 모음 (같으면 IR 로 구별하기 어렵다) */
+/* 흡수 띠 → 상관표(IR_TABLE)의 어느 줄인가 (상관표에서 ‘이 화합물’ 표시) */
+const TABLE_OF = { OH: 'OH', OHacid: 'OHacid', NH2: 'NH', NH: 'NH', CHsp: 'CHsp', CHsp2: 'CHsp2', CHar: 'CHsp2', CHsp3: 'CHsp3', CHO: 'CHO', CN: 'CN', CC3: 'CC3',
+  CCdb: 'CCdb', CCar: 'CCar', NO2: 'NO2', CHb: 'CHb', CHb3: 'CHb', COs: 'COs', CCOs: 'COs' };
+export function tableIds(bands) {
+  const ids = new Set();
+  for (const b of bands) {
+    if (b.str === 'vw') continue;
+    if (b.key === 'CO') ids.add('CO' + b.kind);
+    else if (b.key.startsWith('oop')) ids.add('oop');
+    else if (b.key === 'CX') { if (b.vib.startsWith('C–Cl')) ids.add('CCl'); if (b.vib.startsWith('C–Br')) ids.add('CBr'); }
+    else if (TABLE_OF[b.key]) ids.add(TABLE_OF[b.key]);
+  }
+  return ids;
+}
 export const sigKey = b => b.key === 'CO' ? 'CO:' + b.grp : ['NH2', 'NH', 'OH'].includes(b.key) ? b.key + ':' + b.grp.replace(/방향족 /, '') : b.key;
 export function irSignature(bands) {
   return [...new Set(bands.filter(b => b.diag && b.str !== 'vw').map(sigKey))].sort().join(' ');
@@ -474,7 +488,7 @@ function mScore(m, P) {
     if (kinds.has('acid')) return 70;
     if (P.nitro.length) return 60;
     if (kinds.size) return 40;
-    if (P.alcohol.length) return 30;
+    if (P.alcohol.length) return P.alcohol.some(x => cNb(m, x.c).some(j => arom(m, j))) ? 80 : 30;
     return benzCC ? 35 : 80;
   }
   const v = [];
@@ -515,7 +529,8 @@ export function massSpec(mol) {
     if (HAL.has(a.el)) return { F: 0.2, Cl: 1.3, Br: 1.4, I: 1.5 }[a.el];
     if (a.el !== 'C') return 0.5;
     const hv = m.nb[r].filter(n => lost.has(n.j));
-    if (arom(m, r) || hv.some(n => n.o >= 2)) return hv.some(n => n.o === 2 && A[n.j].el === 'O') ? 0.6 : hv.some(n => n.o === 3 && A[n.j].el === 'N') ? 0.2 : 0.3;
+    if (arom(m, r)) return 0.15;
+    if (hv.some(n => n.o >= 2)) return hv.some(n => n.o === 2 && A[n.j].el === 'O') ? 0.6 : hv.some(n => n.o === 3 && A[n.j].el === 'N') ? 0.2 : 0.3;
     const nC = hv.length, size = [...lost].filter(i => isC(m, i)).length;
     let f = nC === 0 ? 0.15 : nC === 1 ? Math.min(1, 0.8 + 0.05 * (size - 2)) : nC === 2 ? 1 : 1.15;
     if (hv.some(n => arom(m, n.j) || m.nb[n.j].some(q => q.o >= 2 && q.j !== r))) f = Math.max(f, 1.1);
@@ -553,9 +568,18 @@ export function massSpec(mol) {
       const lost = side(r.k, r.j), ion = side(r.k, ca);
       if (lost.has(ca)) continue;
       const rem = cNb(m, ca).filter(j => j !== r.j).length;
-      push('alpha', compOf(m, ion), h.base * radF(lost, r.j) * (1 + 0.25 * rem), ionText(ion, mods), radText(lost, r.j), ion);
+      push('alpha', compOf(m, ion), h.base * radF(lost, r.j) * (1 + 0.25 * rem), ionText(ion, mods), radText(lost, r.j), ion, { mark: { lost: [...lost], cut: [[ca, r.j]] } });
     }
-    if (A[ca].h && h.base >= 70) push('alpha', compOf(m, all, -1), h.base * 0.03, ionText(all, { ...mods, h: new Map([[ca, -1]]) }), 'H•', all);
+    /* α-H 이탈 (M − 1): 벤질 자리이면 고리와 공명해 잘 일어난다 */
+    const bz = cNb(m, ca).some(j => arom(m, j));
+    if (A[ca].h && h.base >= 70) push('alpha', compOf(m, all, -1), h.base * (bz ? 0.6 : 0.03), ionText(all, { ...mods, h: new Map([[ca, -1]]) }), 'H•', all, { mark: { hs: [[ca, -1]] } });
+    /* 1차 벤질 알코올: [M − H]⁺ 가 CO 를 잃어 C₆H₇⁺ (m/z 79), 다시 H₂ 를 잃어 C₆H₅⁺ (77) */
+    if (h.base === 70 && bz && A[ca].h === 2) {
+      const t1 = ionText(all, { ...mods, h: new Map([[ca, -1]]) }) || `[${fstr(compOf(m, all, -1))}]⁺`;
+      const c79 = minus(M0, { H: 1, C: 1, O: 1 });
+      push('sec', c79, 85, `${fstr(c79)}⁺`, 'CO', [...all].filter(i => i !== ca && i !== h.y), { from: t1, mark: { lost: [ca, h.y], hs: [[ca, -1]] } });
+      push('sec', minus(c79, { H: 2 }), 35, null, 'H₂', [...all].filter(i => i !== ca && i !== h.y), { from: `${fstr(c79)}⁺`, mark: { lost: [ca, h.y] } });
+    }
   }
   /* 카보닐 α-개열 → 아실륨 이온 */
   const ACYL_C = { ketone: 80, aldehyde: 30, ester: 25, acid: 25, amide: 40, acylhalide: 10 };
@@ -569,14 +593,14 @@ export function massSpec(mol) {
       let base = X.el === 'C' ? ACYL_C[x.kind] : X.el === 'O' ? 80 : X.el === 'N' ? 60 : 100;
       let f = radF(lost, n.j);
       if (aryl) { base = 110; f = Math.max(f, 0.8); }
-      const fr = { c: compOf(m, ion), score: base * f, text: ionText(ion, mods), lost: radText(lost, n.j), ion, c0: c, o: x.o, aryl };
-      push('acyl', fr.c, fr.score, fr.text, fr.lost, ion);
+      const fr = { c: compOf(m, ion), score: base * f, text: ionText(ion, mods), lost: radText(lost, n.j), ion, c0: c, o: x.o, aryl, cut: [c, n.j] };
+      push('acyl', fr.c, fr.score, fr.text, fr.lost, ion, { mark: { lost: [...lost], cut: [[c, n.j]] } });
       acyls.push(fr);
     }
     if (x.kind === 'aldehyde') {
       const aryl = cNb(m, c).some(j => arom(m, j));
-      const fr = { c: compOf(m, all, -1), score: aryl ? 88 : 80 * 0.06, text: ionText(all, { ...mods, h: new Map([[c, -1]]) }), lost: 'H•', ion: all, c0: c, o: x.o, aryl };
-      push('acyl', fr.c, fr.score, fr.text, fr.lost, all);
+      const fr = { c: compOf(m, all, -1), score: aryl ? 88 : 80 * 0.06, text: ionText(all, { ...mods, h: new Map([[c, -1]]) }), lost: 'H•', ion: all, c0: c, o: x.o, aryl, hs: [c, -1] };
+      push('acyl', fr.c, fr.score, fr.text, fr.lost, all, { mark: { hs: [[c, -1]] } });
       acyls.push(fr);
     }
   }
@@ -588,7 +612,7 @@ export function massSpec(mol) {
     if (!at || !isC(m, at.j)) continue;
     const set = new Set(rest);
     const s = f.aryl ? f.score * 0.55 : f.score * 0.3 * Math.min(1.5, catS(set, at.j) / 45);
-    push('sec', compOf(m, set), s, condensed(m, set, { q: new Map([[at.j, 1]]) }), 'CO', set, { from: f.text });
+    push('sec', compOf(m, set), s, condensed(m, set, { q: new Map([[at.j, 1]]) }), 'CO', set, { from: f.text, mark: { lost: [...all].filter(i => !set.has(i)), cut: [[f.c0, at.j], ...(f.cut ? [f.cut] : [])], hs: f.hs ? [f.hs] : [] } });
   }
   /* McLafferty 자리옮김 (γ-수소) */
   const MCL = { ketone: 70, aldehyde: 90, acid: 95, ester: 85, amide: 85, nitrile: 60 };
@@ -607,7 +631,7 @@ export function massSpec(mol) {
         const mods = { o: new Map([[bk(c, x.o), x.kind === 'nitrile' ? 2 : 1], [bk(c, a1), 2]]), h: new Map([[x.o, 1]]) };
         const t = ionText(ion, mods);
         const alk = condensed(m, lost, { o: new Map([[bk(b1, g), 2]]), h: new Map([[g, -1]]) }) || fstr(compOf(m, lost, -1));
-        push('mcl', compOf(m, ion, 1), MCL[x.kind] * (1 + 0.1 * (gs.length - 1)), t ? `[${t}]⁺•` : null, alk, ion, { rad: true });
+        push('mcl', compOf(m, ion, 1), MCL[x.kind] * (1 + 0.1 * (gs.length - 1)), t ? `[${t}]⁺•` : null, alk, ion, { rad: true, mark: { lost: [...lost], cut: [[a1, b1]], hs: [[g, -1], [x.o, 1]] } });
       }
     }
   }
@@ -615,22 +639,24 @@ export function massSpec(mol) {
   for (const x of P.alcohol) {
     if (!cNb(m, x.c).some(j => A[j].h > 0 && sp3(m, j))) continue;
     const nC = M0.C || 0, cyc = R.list.some(r => r.includes(x.c));
-    push('dehyd', minus(M0, { H: 2, O: 1 }), cyc ? 30 : x.cls >= 3 ? 8 : x.cls === 2 ? 12 : nC >= 4 ? 30 : 15, null, 'H₂O', [...all].filter(i => i !== x.o), { rad: true });
+    const bH = cNb(m, x.c).find(j => A[j].h > 0 && sp3(m, j));
+    push('dehyd', minus(M0, { H: 2, O: 1 }), cyc ? 30 : x.cls >= 3 ? 8 : x.cls === 2 ? 12 : nC >= 4 ? 30 : 15, null, 'H₂O', [...all].filter(i => i !== x.o), { rad: true, mark: { lost: [x.o], cut: [[x.c, x.o]], hs: [[bH, -1]] } });
   }
   for (const x of P.halide) {
     if (x.aryl || x.vinyl || !cNb(m, x.c).some(j => A[j].h > 0 && sp3(m, j))) continue;
-    push('hx', minus(M0, { H: 1, [x.el]: 1 }), { F: 10, Cl: 8, Br: 6, I: 3 }[x.el], null, 'H' + x.el, [...all].filter(i => i !== x.x), { rad: true });
+    const bH = cNb(m, x.c).find(j => A[j].h > 0 && sp3(m, j));
+    push('hx', minus(M0, { H: 1, [x.el]: 1 }), { F: 10, Cl: 8, Br: 6, I: 3 }[x.el], null, 'H' + x.el, [...all].filter(i => i !== x.x), { rad: true, mark: { lost: [x.x], cut: [[x.c, x.x]], hs: [[bH, -1]] } });
   }
   /* C–X 개열 · 할로젠 α-개열 */
   for (const x of P.halide) {
     const ion = side(x.k, x.c);
     const st = x.aryl ? 30 : x.vinyl ? 3 : catS(ion, x.c);
-    push('cx', compOf(m, ion), st * { F: 0.1, Cl: 0.55, Br: 1.0, I: 1.2 }[x.el], ionText(ion, { q: new Map([[x.c, 1]]) }), '•' + x.el, ion);
+    push('cx', compOf(m, ion), st * { F: 0.1, Cl: 0.55, Br: 1.0, I: 1.2 }[x.el], ionText(ion, { q: new Map([[x.c, 1]]) }), '•' + x.el, ion, { mark: { lost: [x.x], cut: [[x.c, x.x]] } });
     if (x.aryl || x.vinyl || x.el === 'F') continue;
     for (const r of m.nb[x.c]) {
       if (r.j === x.x || !isC(m, r.j) || ringBond(r.k)) continue;
       const lost = side(r.k, r.j), ion2 = side(r.k, x.c);
-      push('alphaX', compOf(m, ion2), (x.el === 'Cl' ? 12 : 8) * radF(lost, r.j), ionText(ion2, { o: new Map([[bk(x.c, x.x), 2]]), q: new Map([[x.x, 1]]) }), radText(lost, r.j), ion2);
+      push('alphaX', compOf(m, ion2), (x.el === 'Cl' ? 12 : 8) * radF(lost, r.j), ionText(ion2, { o: new Map([[bk(x.c, x.x), 2]]), q: new Map([[x.x, 1]]) }), radText(lost, r.j), ion2, { mark: { lost: [...lost], cut: [[x.c, r.j]] } });
     }
   }
   /* 벤질 개열 → 트로필륨, 방향족 고리–치환기 개열 → 페닐 양이온 */
@@ -646,17 +672,17 @@ export function massSpec(mol) {
         for (const { q, lost, f } of cand) {
           const ion = side(q.k, b), c = compOf(m, ion);
           const keep = m.nb[b].filter(n => n.j !== ai && n.j !== q.j).length;
-          push('benz', c, 100 * Math.pow(f / best, 2) * (1 + 0.3 * keep), trop(c) ? 'C₇H₇⁺ (트로필륨 이온)' : ionText(ion, { q: new Map([[b, 1]]) }), radText(lost, q.j), ion);
+          push('benz', c, 100 * Math.pow(f / best, 2) * (1 + 0.3 * keep), trop(c) ? 'C₇H₇⁺ (트로필륨 이온)' : ionText(ion, { q: new Map([[b, 1]]) }), radText(lost, q.j), ion, { mark: { lost: [...lost], cut: [[b, q.j]] } });
         }
         if (A[b].h === 3) {
           const c = compOf(m, all, -1);
-          push('benz', c, methyls.length > 1 ? 35 : 100, trop(c) ? 'C₇H₇⁺ (트로필륨 이온)' : null, 'H•', all);
-          if (methyls.length > 1) { const ion = side(n.k, ai), c2 = compOf(m, ion); push('benz', c2, 100 / methyls.length, trop(c2) ? 'C₇H₇⁺ (트로필륨 이온)' : null, '•CH₃', ion); }
+          push('benz', c, methyls.length > 1 ? 35 : 100, trop(c) ? 'C₇H₇⁺ (트로필륨 이온)' : null, 'H•', all, { mark: { hs: [[b, -1]] } });
+          if (methyls.length > 1) { const ion = side(n.k, ai), c2 = compOf(m, ion); push('benz', c2, 100 / methyls.length, trop(c2) ? 'C₇H₇⁺ (트로필륨 이온)' : null, '•CH₃', ion, { mark: { lost: [...side(n.k, b)], cut: [[ai, b]] } }); }
         }
       }
       if (HAL.has(A[b].el) || (A[b].el === 'N' && A[b].q === 1) || (methyls.length > 1 && A[b].h === 3)) continue;
       const lost = side(n.k, b), ion = side(n.k, ai);
-      push('aryl', compOf(m, ion), (isC(m, b) && sp3(m, b) ? 8 : 25) * radF(lost, b), ionText(ion, { q: new Map([[ai, 1]]) }), radText(lost, b), ion);
+      push('aryl', compOf(m, ion), (isC(m, b) && sp3(m, b) ? 8 : 25) * radF(lost, b), ionText(ion, { q: new Map([[ai, 1]]) }), radText(lost, b), ion, { mark: { lost: [...lost], cut: [[ai, b]] } });
     }
   }
   /* 알킬 C–C 개열 (탄화수소 조각이 양이온) */
@@ -672,7 +698,7 @@ export function massSpec(mol) {
       if (seen.has(text)) continue;
       seen.add(text);
       const allyl = m.nb[c].some(n => ion.has(n.j) && m.nb[n.j].some(q => q.o === 2 && q.j !== c));
-      push(allyl ? 'allyl' : 'cc', compOf(m, ion), st * radF(lost, r) * (hetFG ? 0.5 : 1), text, radText(lost, r), ion);
+      push(allyl ? 'allyl' : 'cc', compOf(m, ion), st * radF(lost, r) * (hetFG ? 0.5 : 1), text, radText(lost, r), ion, { mark: { lost: [...lost], cut: [[c, r]] } });
     }
   });
   /* C–O 개열: 에터 · 에스터의 알킬–O */
@@ -681,7 +707,7 @@ export function massSpec(mol) {
     const nb = m.nb[cc].find(n => n.j === o);
     if (!nb || ringBond(nb.k)) return;
     const ion = side(nb.k, cc), lost = side(nb.k, o);
-    push('co', compOf(m, ion), catS(ion, cc) * 0.35, ionText(ion, { q: new Map([[cc, 1]]) }), radText(lost, o), ion);
+    push('co', compOf(m, ion), catS(ion, cc) * 0.35, ionText(ion, { q: new Map([[cc, 1]]) }), radText(lost, o), ion, { mark: { lost: [...lost], cut: [[cc, o]] } });
   };
   for (const x of P.ether) { coCut(x.c1, x.o); coCut(x.c2, x.o); }
   for (const x of P.carbonyl.filter(k => k.kind === 'ester')) for (const r of x.f.OR) coCut(r.c, r.o);
@@ -689,14 +715,21 @@ export function massSpec(mol) {
   for (const x of P.nitro) {
     if (x.k < 0) continue;
     const ion = side(x.k, x.c);
-    push('nitro', compOf(m, ion), x.aryl ? 90 : catS(ion, x.c), ionText(ion, { q: new Map([[x.c, 1]]) }), '•NO₂', ion);
-    if (x.aryl) push('loss', minus(M0, { N: 1, O: 1 }), 12, null, 'NO', [...all].filter(i => i !== x.n));
+    push('nitro', compOf(m, ion), x.aryl ? 90 : catS(ion, x.c), ionText(ion, { q: new Map([[x.c, 1]]) }), '•NO₂', ion, { mark: { lost: [x.n, ...x.os], cut: [[x.c, x.n]] } });
+    if (x.aryl) push('loss', minus(M0, { N: 1, O: 1 }), 12, null, 'NO', [...all].filter(i => i !== x.n && i !== x.os[0]), { mark: { lost: [x.n, x.os[0]] } });
   }
   /* 작은 분자 이탈: 페놀 CO, 아닐린 · 벤조나이트릴 HCN */
-  if (P.phenol.length) { push('loss', minus(M0, { C: 1, O: 1 }), 30, null, 'CO', all, { rad: true }); push('loss', minus(M0, { C: 1, O: 1, H: 1 }), 20, null, '•CHO', all); }
-  if (P.amine.some(x => x.aryl && x.h === 2) || P.nitrile.some(x => cNb(m, x.c).some(j => arom(m, j)))) push('loss', minus(M0, { H: 1, C: 1, N: 1 }), 30, null, 'HCN', all, { rad: true });
-  if (P.nitrile.some(x => cNb(m, x.c).some(j => sp3(m, j) && A[j].h))) push('hloss', compOf(m, all, -1), 20, null, 'H•', all);
-  if (P.arenes.length && !frags.some(f => f.proc !== 'M')) push('hloss', compOf(m, all, -1), 15, null, 'H•', all);
+  const but = (...x) => [...all].filter(i => !x.includes(i));
+  if (P.phenol.length) {
+    const ph = P.phenol[0];
+    push('loss', minus(M0, { C: 1, O: 1 }), 30, null, 'CO', but(ph.c, ph.o), { rad: true, mark: { lost: [ph.c, ph.o] } });
+    push('loss', minus(M0, { C: 1, O: 1, H: 1 }), 20, null, '•CHO', but(ph.c, ph.o), { mark: { lost: [ph.c, ph.o] } });
+  }
+  const an = P.amine.find(x => x.aryl && x.h === 2), bn = P.nitrile.find(x => cNb(m, x.c).some(j => arom(m, j)));
+  if (an || bn) { const hc = an ? [an.n, m.nb[an.n][0].j] : [bn.c, bn.n]; push('loss', minus(M0, { H: 1, C: 1, N: 1 }), 30, null, 'HCN', but(...hc), { rad: true, mark: { lost: hc } }); }
+  const aN = P.nitrile.map(x => cNb(m, x.c).find(j => sp3(m, j) && A[j].h)).find(j => j !== undefined);
+  if (aN !== undefined) push('hloss', compOf(m, all, -1), 20, null, 'H•', all, { mark: { hs: [[aN, -1]] } });
+  if (P.arenes.length && !frags.some(f => f.proc !== 'M')) push('hloss', compOf(m, all, -1), 15, null, 'H•', all, { mark: { hs: [[P.arenes[0].find(a => A[a].h), -1]] } });
   /* 고리: 사이클로알케인의 에틸렌 이탈, 사이클로헥센의 레트로 딜스–알더 */
   if (!hetFG && !P.arenes.length) {
     for (const r of R.list) {
@@ -707,7 +740,7 @@ export function massSpec(mol) {
           const cut = new Set([bk(at(2), at(3)), bk(at(4), at(5))]);
           const s0 = new Set([at(0)]), st = [at(0)];
           while (st.length) { const i = st.pop(); for (const n of m.nb[i]) if (!cut.has(bk(i, n.j)) && !s0.has(n.j)) { s0.add(n.j); st.push(n.j); } }
-          if (!s0.has(at(3))) { push('rda', compOf(m, s0), 70, null, fstr(minus(M0, compOf(m, s0))), s0, { rad: true }); continue; }
+          if (!s0.has(at(3))) { push('rda', compOf(m, s0), 70, null, fstr(minus(M0, compOf(m, s0))), s0, { rad: true, mark: { lost: [...all].filter(i => !s0.has(i)), cut: [[at(2), at(3)], [at(4), at(5)]] } }); continue; }
         }
       }
       if (r.length >= 5 && r.every(a => sp3(m, a))) { push('ring', minus(M0, { C: 2, H: 4 }), 100, null, 'CH₂=CH₂', all, { rad: true }); push('allyl', { C: 3, H: 5 }, 40, 'C₃H₅⁺ (알릴 양이온)', '', r.slice(0, 3)); break; }
@@ -715,7 +748,7 @@ export function massSpec(mol) {
   }
   for (const x of P.carbonyl.filter(k => k.kind === 'ketone')) {
     const r = R.list.find(q => q.includes(x.c));
-    if (r && r.length >= 5 && !P.arenes.some(a => a.includes(x.c))) { push('ring', minus(M0, { C: 1, O: 1 }), 45, null, 'CO', [...all].filter(i => i !== x.o), { rad: true }); break; }
+    if (r && r.length >= 5 && !P.arenes.some(a => a.includes(x.c))) { push('ring', minus(M0, { C: 1, O: 1 }), 45, null, 'CO', [...all].filter(i => i !== x.o && i !== x.c), { rad: true, mark: { lost: [x.c, x.o] } }); break; }
   }
   /* 이차: C₂H₂ 이탈 (C₆H₅⁺ 77 → 51, C₇H₇⁺ 91 → 65) */
   for (const f of frags.slice()) {
@@ -729,7 +762,7 @@ export function massSpec(mol) {
   for (const f of frags) {
     const key = f.mz + '|' + f.proc + '|' + f.text;
     const g = merged.get(key);
-    if (g) { g.score += f.score; g.atoms = [...new Set([...g.atoms, ...f.atoms])]; } else merged.set(key, { ...f });
+    if (g) { g.score += f.score; g.n = (g.n || 1) + 1; } else merged.set(key, { ...f });
   }
   const ions = [...merged.values()];
   for (const f of ions) {

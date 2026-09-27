@@ -4,7 +4,7 @@ import { startFx } from './fx.js';
 import { initReport } from './report.js';
 
 /* 패치 노트(CHANGELOG.md · GitHub Releases)의 번호와 같게 */
-const VERSION = 'v7.0 · 2026-09-27';
+const VERSION = 'v7.1 · 2026-09-27';
 $('#menu-ver').textContent = VERSION.split(' ')[0];
 
 const reduce = mq('(prefers-reduced-motion: reduce)');

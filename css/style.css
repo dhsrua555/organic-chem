@@ -468,6 +468,12 @@ svg.mol .m-at.hl { fill: var(--ok); }
 svg.mol .m-b.pri { stroke: var(--accent-2); }
 svg.mol .m-b.hl { stroke: var(--ok); stroke-width: 2.4; }
 svg.mol .m-hlc { fill: var(--ok); fill-opacity: 0.85; }
+svg.mol .m-b.lost, svg.mol .m-b.cut { stroke: var(--bad); stroke-dasharray: 5 4; }
+svg.mol .m-at.lost { fill: var(--bad); }
+svg.mol .m-hlc.lost { fill: var(--bad); }
+svg.mol .m-cutx { stroke: var(--bad); stroke-width: 2.6; stroke-linecap: round; }
+svg.mol .m-hs { fill: var(--warn); font-family: var(--body); font-size: 13px; font-weight: 500; }
+svg.mol .m-hs.plus { fill: var(--ok); }
 svg.mol .sp { font-size: 10px; }
 svg.mol polygon.m-chain.ring { fill: var(--accent); fill-opacity: 0.1; stroke-width: 12; stroke-opacity: 0.2; }
 svg.mol text.m-loc { fill: var(--accent-2); font-size: 11px; font-weight: 500; }
@@ -883,3 +889,82 @@ svg.chart.narrow { min-width: 0; }
 .chart.narrow .ms-lab { font-size: 13px; }
 .chart.narrow .ms-tag { font-size: 12px; }
 .chart.narrow .ir-mk text { font-size: 11px; }
+
+/* ── 상관표 · 규칙: 영역별 흡수 위치 막대 · 규칙 카드 ─────────────── */
+.ir-ref { --ir-name: 200px; padding: 16px 20px 10px; }
+.ir-ref-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 18px; }
+.ir-ref-top .lbl { margin: 0; }
+.ir-key { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--ink-2); align-items: center; }
+.ir-key span { display: inline-flex; align-items: center; gap: 6px; }
+.ir-key .ir-bar { position: static; display: inline-block; width: 24px; height: 9px; }
+.ir-axis-row { position: sticky; top: calc(var(--hud-h) - 8px); z-index: 2; display: grid; grid-template-columns: var(--ir-name) minmax(0, 1fr); column-gap: 16px; margin: 12px -20px 0; padding: 9px 20px 7px; background: rgba(8, 15, 33, 0.98); border-bottom: 1px solid var(--line-2); }
+.ir-axis { position: relative; height: 16px; }
+.ir-axis b { position: absolute; top: 0; transform: translateX(-50%); font-family: var(--mono); font-weight: 400; font-size: 11.5px; color: var(--ink-2); }
+.ir-axis b:first-child { transform: none; }
+.ir-sec { padding: 16px 0 8px; border-bottom: 1px solid var(--line-2); }
+.ir-sec:last-child { border-bottom: 0; }
+.ir-sec-head { display: grid; grid-template-columns: var(--ir-name) minmax(0, 1fr); column-gap: 16px; row-gap: 3px; align-items: baseline; margin-bottom: 8px; }
+.ir-sec-head h3 { margin: 0; font-size: 16px; font-weight: 500; color: var(--ink); letter-spacing: 0.02em; }
+.ir-sec-head span { font-family: var(--mono); font-size: 13px; color: var(--accent-3); }
+.ir-sec-head p { grid-column: 2; margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); max-width: 72ch; }
+.ir-row { display: grid; grid-template-columns: var(--ir-name) minmax(0, 1fr); column-gap: 16px; align-items: center; margin: 0 -10px; padding: 10px 10px 9px; border-top: 1px solid rgba(120, 160, 255, 0.09); border-radius: 6px; }
+.ir-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.ir-name b { font-weight: 500; font-size: 14.5px; color: var(--ink); }
+.ir-name span { font-size: 13px; color: var(--ink-2); }
+.ir-track { position: relative; height: 22px; border-radius: 4px;
+  background: linear-gradient(to right, transparent var(--a), rgba(116, 186, 255, 0.09) var(--a), rgba(116, 186, 255, 0.09) var(--b), transparent var(--b)),
+    repeating-linear-gradient(to right, rgba(120, 160, 255, 0.18) 0 1px, transparent 1px 13.8889%); }
+.ir-bar { position: absolute; top: 5px; height: 12px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 10px rgba(47, 134, 255, 0.45); }
+.ir-bar.m { background: rgba(47, 134, 255, 0.62); box-shadow: none; }
+.ir-bar.w, .ir-bar.vw { background: rgba(47, 134, 255, 0.16); border: 1px solid rgba(116, 186, 255, 0.75); box-shadow: none; }
+.ir-num { position: absolute; top: 1px; font-style: normal; font-family: var(--mono); font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+.ir-note { grid-column: 2; margin: 4px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.ir-note .st { display: inline-block; margin-right: 8px; padding: 0 8px; border-radius: 9px; font-size: 11.5px; line-height: 1.6; border: 1px solid var(--line-2); color: var(--ink-2); }
+.ir-note .st.s { border-color: rgba(116, 186, 255, 0.65); color: var(--accent-3); }
+.ir-row.mine { background: linear-gradient(90deg, rgba(95, 224, 180, 0.12), rgba(95, 224, 180, 0.02) 70%); box-shadow: inset 3px 0 0 var(--ok); }
+.ir-row.mine .ir-bar { background: var(--ok); box-shadow: 0 0 10px rgba(95, 224, 180, 0.45); }
+.ir-row.mine .ir-bar.m { background: rgba(95, 224, 180, 0.7); box-shadow: none; }
+.ir-row.mine .ir-bar.w { background: rgba(95, 224, 180, 0.18); border-color: var(--ok); box-shadow: none; }
+.mine-tag { font-style: normal; font-size: 11px; line-height: 1.6; padding: 0 8px; border-radius: 9px; background: rgba(95, 224, 180, 0.14); color: var(--ok); border: 1px solid rgba(95, 224, 180, 0.5); white-space: nowrap; }
+.rc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rc { display: grid; gap: 6px; align-content: start; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); }
+.rc b { font-weight: 500; font-size: 14.5px; color: var(--accent-3); }
+.rc p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink); }
+.rc small { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding-top: 6px; border-top: 1px dashed var(--line-2); }
+.frag-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+.frag-list { padding: 14px 18px 8px; }
+.frag-list ul { list-style: none; margin: 0; padding: 0; }
+.frag-list li { display: grid; grid-template-columns: 6.4em minmax(0, 12em) minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.frag-list li b { font-family: var(--mono); font-weight: 500; color: var(--accent-3); white-space: nowrap; }
+.frag-list li span { font-family: var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.frag-list li small { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+@media (max-width: 700px) {
+  .ir-ref { --ir-name: 0px; padding: 14px 14px 8px; }
+  .ir-axis-row { column-gap: 0; margin: 12px -14px 0; padding: 8px 14px 6px; }
+  .ir-sec-head, .ir-row { grid-template-columns: minmax(0, 1fr); }
+  .ir-sec-head p, .ir-note { grid-column: 1; }
+  .ir-name { margin-bottom: 6px; }
+  .ir-axis b { font-size: 11px; }
+  .ir-axis b.half { display: none; }
+  .rc-grid { grid-template-columns: minmax(0, 1fr); }
+  .frag-list li { grid-template-columns: 5.6em minmax(0, 1fr); }
+  .frag-list li small { grid-column: 2; }
+}
+/* 글자가 위 · 아래 머리 막대 밑으로 지나갈 때 겹쳐 보이지 않게 가림을 조금 더 짙게 */
+.hud-top { background: linear-gradient(to bottom, rgba(3, 6, 15, 0.97) 40%, rgba(3, 6, 15, 0)); }
+.hud-bottom { background: linear-gradient(to top, rgba(3, 6, 15, 0.97) 45%, rgba(3, 6, 15, 0)); }
+/* 분광: 고른 흡수 띠 · 피크 설명 (구조식 아래) */
+.sp-sel { margin: 4px 0 8px; padding: 10px 12px; border-radius: 6px; background: rgba(95, 224, 180, 0.07); border: 1px solid rgba(95, 224, 180, 0.35); display: grid; gap: 5px; }
+.sp-sel[hidden] { display: none; }
+.sp-sel p { margin: 0; }
+.sp-cap { font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
+.sp-cap b { font-family: var(--mono); font-weight: 500; color: var(--ok); }
+.sp-why { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.sp-leg { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 11.5px; color: var(--muted); }
+.sp-leg span { display: inline-flex; align-items: center; gap: 5px; }
+.sp-leg .lg-ion { display: inline-block; width: 14px; height: 3px; background: var(--ok); border-radius: 2px; }
+.sp-leg .lg-lost { display: inline-block; width: 14px; height: 0; border-top: 2px dashed var(--bad); }
+.sp-leg .lg-hs { font-style: normal; font-weight: 500; color: var(--warn); }
+.chart .ch-area, .chart .ch-line, .chart .ch-reg, .chart .ch-grid, .chart .ch-fg { pointer-events: none; }
+.chart .ms-lab, .chart .ms-tag, .chart .ch-t, .chart .ch-ax, .chart .ch-rt { pointer-events: none; }
+.chart .ms-lab, .chart .ms-tag { paint-order: stroke; stroke: rgba(8, 15, 33, 0.92); stroke-width: 4px; stroke-linejoin: round; }
