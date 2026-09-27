@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>spectra test</title>
+<pre id="out"></pre>
+<script type="module">
+/* 분광 예측 점검: 교과서 · NIST 실측 스펙트럼의 핵심 특징(기준 피크 · 분자 이온 · McLafferty · 동위원소 · C=O 파수)과 맞는지 본다.
+   사용: python dev/run.py spectest.html */
+import { fromSmiles } from '../js/chem/edit.js';
+import { irBands, massSpec, irChecks, isoPattern } from '../js/chem/spectra.js';
+const out = document.getElementById('out');
+const log = s => { out.textContent += s + '\n'; };
+/* [SMILES, 기준 피크(확실한 것만, 모르면 null), 있어야 할 피크들, 없어야 할 피크, C=O 파수(있으면)].
+   사이클로헥센의 실측 기준 피크는 m/z 67 (고리가 열린 뒤 CH₃ 이탈) 인데, 모델은 고리를 여는 여러 단계 개열을 다루지 않아 54(레트로 딜스–알더)가 가장 크다 */
+const CASES = [
+  ['CCCCCC', 57, [43, 29, 86], [], null],
+  ['CC(C)CCC', 43, [71, 57], [], null],
+  ['C1CCCCC1', 56, [84, 41], [], null],
+  ['C=CCCCC', null, [84, 55, 41], [], null],
+  ['Cc1ccccc1', 91, [92, 65], [], null],
+  ['CCc1ccccc1', 91, [106], [], null],
+  ['Cc1ccc(C)cc1', 91, [106, 105], [], null],
+  ['CCCBr', 43, [122, 124], [], null],
+  ['CC(C)Cl', 43, [78, 80], [], null],
+  ['Brc1ccccc1', null, [156, 158, 77], [], null],
+  ['CCCCO', 31, [56], [], null],
+  ['CCC(C)O', 45, [59], [], null],
+  ['CC(C)(C)O', 59, [], [], null],
+  ['CCCCN', 30, [73], [], null],
+  ['CCNCC', 58, [73], [], null],
+  ['CCCC=O', 44, [72, 29], [], 1730],
+  ['O=Cc1ccccc1', null, [105, 106, 77, 51], [], 1700],
+  ['CCC(C)=O', 43, [72, 57], [58], 1715],
+  ['CCCCC(C)=O', 43, [58, 100], [], 1715],
+  ['CC(=O)c1ccccc1', 105, [120, 77, 43], [], 1690],
+  ['O=C1CCCC1', null, [84, 56], [], 1745],
+  ['CCCC(=O)O', 60, [88, 45], [], 1710],
+  ['OC(=O)c1ccccc1', 105, [122, 77], [], 1690],
+  ['CCOC(C)=O', 43, [88], [], 1740],
+  ['CCCC(=O)OC', 74, [102, 71], [], 1740],
+  ['COC(=O)c1ccccc1', 105, [136, 77], [], 1720],
+  ['CC(N)=O', null, [59, 44, 43], [], 1660],
+  ['CCCC(N)=O', 59, [87], [], 1660],
+  ['CC(Cl)=O', 43, [78], [], 1800],
+  ['CCC#N', null, [55, 54], [], null],
+  ['[O-][N+](=O)c1ccccc1', 77, [123, 93, 51], [], null],
+  ['Oc1ccccc1', 94, [66, 65], [], null],
+  ['Nc1ccccc1', 93, [66], [], null],
+  ['COc1ccccc1', 108, [], [], null],
+  ['CC(C)(C)OC', 73, [57], [], null],
+  ['C#CCCCC', null, [82, 67], [], null],
+  ['C1=CCCCC1', null, [82, 54], [], null]
+];
+let bad = 0;
+for (const [smi, base, need, not, co] of CASES) {
+  const m = fromSmiles(smi);
+  let ms, ir;
+  try { ms = massSpec(m); ir = irBands(m); } catch (e) { log(`!! ${smi}: ${e.stack}`); bad++; continue; }
+  const has = z => ms.peaks.some(p => p.mz === z && p.rel >= 2);
+  const probs = [];
+  if (base !== null && ms.base.mz !== base) probs.push(`기준 피크 ${ms.base.mz} (기대 ${base})`);
+  for (const z of need) if (!has(z)) probs.push(`m/z ${z} 없음`);
+  for (const z of not) if (has(z)) probs.push(`m/z ${z} 있으면 안 됨`);
+  const cob = ir.find(b => b.key === 'CO');
+  if (co && (!cob || Math.abs(cob.nu - co) > 12)) probs.push(`C=O ${cob ? cob.nu : '없음'} (기대 ${co})`);
+  if (!co && cob) probs.push('C=O 가 있으면 안 됨');
+  if (probs.length) bad++;
+  const top = ms.peaks.slice().sort((a, b) => b.rel - a.rel).slice(0, 7).map(p => `${p.mz}(${p.rel.toFixed(0)})`).join(' ');
+  log(`${probs.length ? 'XX' : 'ok'} ${smi.padEnd(24)} ${ms.formula} M=${ms.M} M+1=${ms.m1.toFixed(1)}% M+2=${ms.m2.toFixed(1)}% | ${top}${probs.length ? '  ← ' + probs.join(', ') : ''}`);
+  for (const f of ms.ions.slice(0, 8)) log(`     ${String(f.mz).padStart(4)} ${f.rel.toFixed(0).padStart(3)}%  ${f.proc.padEnd(6)} ${f.text}  − ${f.lost}`);
+  log('     IR: ' + ir.map(b => `${b.nu} ${b.vib}[${b.grp}]${b.str}`).join(' · '));
+  const iso = isoPattern(ms); if (iso) log('     ' + iso);
+  if (ms.alts.length) log('     HRMS: ' + ms.alts.map(a => `${a.f} ${a.exact.toFixed(4)}${a.self ? '*' : ''}`).join(' · '));
+}
+/* 다른 분자들이 오류 없이 도는지 */
+const MORE = ['BrCc1ccccc1', 'CC(C)Cc1ccc(cc1)C(C)C(=O)O', 'O=C1CCCCC1', 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O', 'CC(=O)Oc1ccccc1C(=O)O', 'CC(=O)Nc1ccc(O)cc1', 'COc1cc(C=O)ccc1O', 'COc1cc(CNC(=O)CCCC/C=C/C(C)C)ccc1O', 'CC(C)=CCC/C(C)=C/CO',
+  'CC1=CC[C@@H](CC1)C(=C)C', 'CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O', 'C[C@H](N)C(=O)O', 'NCCc1ccc(O)c(O)c1', 'CCOC(=O)c1ccc(N)cc1', 'OC(=O)CC(O)(CC(=O)O)C(=O)O', 'Cc1c(cc(cc1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]',
+  'C', 'CC', 'C=C', 'C#C', 'CO', 'C=O', 'ClCCl', 'BrCCBr', 'CC1CO1', 'C1CCOC1', 'c1ccc(cc1)-c1ccccc1', 'FC(F)(F)c1ccccc1', 'C/C=C/C', 'C/C=C\\C', 'CC#CC', 'N#Cc1ccccc1', 'CN(C)C', 'CCOCC', 'OCCO', 'CC(=O)CC(C)=O'];
+for (const smi of MORE) {
+  try { const m = fromSmiles(smi); const ms = massSpec(m), ir = irBands(m); irChecks(ir); if (!ms.peaks.length || !isFinite(ms.base.rel)) throw new Error('피크 없음'); log(`ok ${smi} base ${ms.base.mz} M ${ms.M} (${ms.mRel.toFixed(1)}%) · IR ${ir.length}`); }
+  catch (e) { bad++; log(`!! ${smi}: ${e.stack}`); }
+}
+log(`\n문제 ${bad}건`);
+window.__done = true;
+</script>

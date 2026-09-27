@@ -1,10 +1,10 @@
-/* HEXA 유기화학: 부팅 · 경로(#home #build #groups #rules #quiz) · 메뉴 · 아래 HUD */
+/* HEXA 유기화학: 부팅 · 경로(#home #build #react #groups #rules #spectra #quiz) · 메뉴 · 아래 HUD */
 import { $, $$, store, getLang, setLang, mq } from './ui.js';
 import { startFx } from './fx.js';
 import { initReport } from './report.js';
 
 /* 패치 노트(CHANGELOG.md · GitHub Releases)의 번호와 같게 */
-const VERSION = 'v6.3 · 2026-09-26';
+const VERSION = 'v7.0 · 2026-09-27';
 $('#menu-ver').textContent = VERSION.split(' ')[0];
 
 const reduce = mq('(prefers-reduced-motion: reduce)');
@@ -25,6 +25,7 @@ const PAGES = {
   react: () => import('./pages/react.js'),
   groups: () => import('./pages/groups.js'),
   rules: () => import('./pages/rules.js'),
+  spectra: () => import('./pages/spectra.js'),
   quiz: () => import('./pages/quiz.js')
 };
 
@@ -36,6 +37,7 @@ function anchorFor(route, narrow = innerWidth < 900) {
     react: narrow ? { x: 0.45, y: -0.5, scale: 0.42, dim: 0.3 } : { x: 0.66, y: -0.45, scale: 0.5, dim: 0.5 },
     groups: narrow ? { x: 0.42, y: 0.6, scale: 0.42, dim: 0.6 } : { x: 0.62, y: 0.36, scale: 0.6, dim: 0.95 },
     rules: narrow ? { x: 0.42, y: 0.6, scale: 0.45, dim: 0.5 } : { x: 0.5, y: 0.34, scale: 0.8, dim: 0.85 },
+    spectra: narrow ? { x: 0.45, y: -0.55, scale: 0.4, dim: 0.22 } : { x: 0.72, y: -0.5, scale: 0.45, dim: 0.32 },
     quiz: narrow ? { x: 0, y: 0.1, scale: 1.2, dim: 0.08 } : { x: -0.8, y: -0.45, scale: 0.75, dim: 0.22 }
   };
   return A[route] || A.home;
@@ -72,7 +74,7 @@ async function render() {
   if (scene) scene.setAnchor(anchorFor(route));
   current = mod.mount(view, app, params) || null;
   $$('.menu-list a').forEach(a => { if (a.getAttribute('href') === '#' + route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  const t = { home: 'HEXA 유기화학', build: '구조식 편집기 · HEXA', react: '반응 예측 · HEXA', groups: '작용기와 우선순위 · HEXA', rules: 'IUPAC 명명법 · HEXA', quiz: '연습 문제 · HEXA' }[route];
+  const t = { home: 'HEXA 유기화학', build: '구조식 편집기 · HEXA', react: '반응 예측 · HEXA', groups: '작용기와 우선순위 · HEXA', rules: 'IUPAC 명명법 · HEXA', spectra: '분광 분석 · HEXA', quiz: '연습 문제 · HEXA' }[route];
   document.title = t;
 }
 
@@ -144,7 +146,7 @@ async function boot() {
   /* 긴 글 페이지: 내려 읽기 시작하면 3D 분자를 흐리게 (글자와 겹치지 않도록) */
   let lastDim = 1;
   window.addEventListener('scroll', () => {
-    if (!scene || !['groups', 'rules', 'react'].includes(currentRoute) || !menu.hidden) return;
+    if (!scene || !['groups', 'rules', 'react', 'spectra'].includes(currentRoute) || !menu.hidden) return;
     const f = Math.max(0.22, 1 - window.scrollY / 420);
     if (Math.abs(f - lastDim) < 0.02) return;
     lastDim = f;

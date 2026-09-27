@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from run import serve, PORT
 OUT = Path(__file__).parent / 'out'
 GROUPS = ['acid', 'ester', 'acylhalide', 'amide', 'nitrile', 'aldehyde', 'ketone', 'alcohol', 'amine', 'alkyl', 'ether', 'halide', 'nitro']
-ROUTES = ['home', 'build', 'react', 'rules', 'quiz'] + ['groups-' + g for g in GROUPS]
+ROUTES = ['home', 'build', 'react', 'rules', 'spectra', 'quiz'] + ['groups-' + g for g in GROUPS]
 DEV = {'desktop': dict(viewport={'width': 1440, 'height': 900}), 'mobile': dict(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)}
 BAD = re.compile(r'\bundefined\b|\bNaN\b|\bnull\b|\[object|\$\{')
 srv = serve()

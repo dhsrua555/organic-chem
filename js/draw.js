@@ -33,7 +33,7 @@ function spans(seq) {
     : p.sup ? `<tspan class="sp" dy="-6">${esc(p.t)}</tspan><tspan dy="6">​</tspan>` : esc(p.t)).join('');
 }
 
-/* opts: { interactive, mode, locants, chain, stars, pick, tool, hl(Set 강조 원자), compact, cip(입체중심 원자 번호), mark(★ 표시할 원자) } */
+/* opts: { interactive, mode, locants, chain, stars, pick, tool, hl(Set 강조 원자), hlDots(강조한 꼭짓점 탄소에 점), compact, cip(입체중심 원자 번호), mark(★ 표시할 원자) } */
 export function drawMolecule(mol, res, opts = {}) {
   const mode = opts.mode || 'skeletal';
   const A = mol.atoms, R = rings(mol);
@@ -121,6 +121,8 @@ export function drawMolecule(mol, res, opts = {}) {
       out.atoms.push(`<text class="${cls}" x="${r1(x0)}" y="${r1(Y(a.y) + FS * 0.36)}">${spans(lab.seq)}</text>`);
       grow(x0 / U, a.y, 0.3); grow((x0 + w) / U, a.y, 0.3);
     }
+    /* 골격식의 꼭짓점 탄소는 글자가 없어 강조가 안 보이므로 점으로 (hlDots) */
+    if (opts.hlDots && hl.has(i) && !lab && !pri.has(i)) out.band.push(`<circle class="m-hlc" cx="${r1(X(a.x))}" cy="${r1(Y(a.y))}" r="${U * 0.17}"/>`);
     if (opts.interactive) {
       const name = a.el + (a.h ? 'H' + (a.h > 1 ? a.h : '') : '');
       out.hits.push(`<g class="hit-a${opts.pick === i ? ' on' : ''}" data-atom="${i}" role="button" tabindex="0" aria-label="${i + 1}번 원자 ${name}${a.h ? '' : ' (H 없음)'}"><polygon points="${hexPts(a.x, a.y, 0.34)}"/></g>`);

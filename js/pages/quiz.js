@@ -1,4 +1,4 @@
-/* 퀴즈: 네 분야(이름 짓기 · 반응 · 입체 · 작용기)를 다시 세부 주제로 나눠 한 가지씩 집중해서 푼다. 주제마다 맞힌 수를 따로 센다.
+/* 퀴즈: 다섯 분야(명명 · 반응 · 입체화학 · 작용기 · 분광학)를 다시 세부 주제로 나눠 한 가지씩 집중해서 푼다. 주제마다 맞힌 수를 따로 센다.
    오답 보기는 조각 자리 · 종류를 바꾼 "진짜 다른 분자", 반응에서는 다른 시약 · 다른 방향의 생성물 */
 import { TEMPLATES, fromSmiles, attach, flipEZ } from '../chem/edit.js';
 import { steps } from '../chem/explain.js';
@@ -6,12 +6,15 @@ import { CATS, REACTIONS, predict, applicable } from '../chem/reactions.js';
 import { drawMolecule } from '../draw.js';
 import { defineMissing, flipCenter, stereoInfo, stereoSites, cipDetail } from '../chem/stereo.js';
 import { branchesOf, compareBranch } from '../chem/cip.js';
-import { toSmiles } from '../chem/core.js';
+import { toSmiles, rings } from '../chem/core.js';
+import { irBands, massSpec, irSignature, sigKey, isoPattern, IR_TABLE, STR_KO, PROC } from '../chem/spectra.js';
+import { irSVG, msSVG } from '../specview.js';
+import { SPEC_EX } from './spectra.js';
 import { CLASS } from '../chem/name.js';
 import { GROUP_INFO } from '../data.js';
 import { centerHTML, groupLabel } from '../rsview.js';
 import { EXAMPLES } from './react.js';
-import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle, drawMode } from '../ui.js';
+import { entry, tokensHTML, esc, store, getLang, onLang, pick, shuffle, drawMode, formulaText } from '../ui.js';
 
 const UNSTABLE = ['enol', 'enamine', 'ynol', 'ynamine', 'gemdiol', 'halohydrin', 'hemiaminal', 'hemiacetal'];
 const POOL = ['OH', 'OH', 'OH', 'COOH', 'COOH', 'CHO', 'NH2', 'NH2', 'CH3', 'CH3', 'CH3', 'CH3', 'Cl', 'Cl', 'Br', 'NO2', 'OCH3', 'COCH3', 'CN', 'COOCH3', 'CONH2', 'F', 'oxo', 'C2H5', 'vinyl', 'phenyl'];
@@ -63,11 +66,20 @@ const GR_T = [
   { id: 'principal', ko: '주 작용기 결정', sub: '접미사로 표시되는 작용기' },
   { id: 'affix', ko: '접미사 · 접두사', sub: '-ol ↔ hydroxy-' }
 ];
+const SP_T = [
+  { id: 'mix', ko: '종합', sub: '다섯 주제 혼합' },
+  { id: 'irtab', ko: 'IR 특성 흡수', sub: '결합 ↔ 파수 (cm⁻¹)' },
+  { id: 'irspec', ko: 'IR 스펙트럼 해석', sub: '스펙트럼 → 구조' },
+  { id: 'msion', ko: '분자 이온 · 동위원소', sub: 'M⁺• · M+2 · 질소 규칙' },
+  { id: 'msfrag', ko: '조각 이온', sub: 'α-개열 · McLafferty · 트로필륨' },
+  { id: 'formula', ko: '분자식 · 불포화도', sub: '불포화도 · 정밀 질량' }
+];
 const AREAS = [
   { id: 'name', ko: '명명', topics: NAME_T },
   { id: 'react', ko: '반응', topics: RX_T },
   { id: 'stereo', ko: '입체화학', topics: ST_T },
-  { id: 'group', ko: '작용기', topics: GR_T }
+  { id: 'group', ko: '작용기', topics: GR_T },
+  { id: 'spec', ko: '분광학', topics: SP_T }
 ];
 
 /* ── 이름 짓기 ─────────────────────────── */
@@ -431,6 +443,167 @@ function affixQ() {
   };
 }
 
+/* ── 분광학 ───────────────────────────── */
+const SP_POOL = SPEC_EX.flatMap(([, l]) => l.map(x => x[0]));
+/* 질량 분석 문제에만 더 쓰는 할로젠 · 질소 화합물 */
+const MS_MORE = ['ClC1CCCCC1', 'Clc1ccccc1', 'CCCCBr', 'CC(C)Br', 'BrC1CCCCC1', 'ClCc1ccccc1', 'Cc1ccc(Br)cc1', 'CCC(C)Cl', 'CCCN', 'CC(C)N', 'CCCC#N', 'Nc1ccc(C)cc1', 'CC(C)CC(C)=O', 'CCCCCC(=O)O', 'CCCCCCO'];
+/* 분자식이 같은 이성질체 모음: IR 로 작용기를 가려낸다 */
+const IR_SETS = [
+  ['CCCC=O', 'CCC(C)=O', 'C=CCCO', 'C1CCOC1'], ['CCCC(=O)O', 'CCOC(C)=O', 'OCCCC=O', 'CC(=O)CCO'], ['CCC=O', 'CC(C)=O', 'C=CCO', 'C1COC1', 'CC1CO1'],
+  ['CCCCC=O', 'CCCC(C)=O', 'C=CCCCO', 'OC1CCCC1', 'C1CCOCC1'], ['C#CCCCC', 'CC#CCCC', 'C1=CCCCC1'], ['OCc1ccccc1', 'COc1ccccc1', 'Cc1ccc(O)cc1'],
+  ['CC(=O)c1ccccc1', 'O=CCc1ccccc1', 'COc1ccc(C=C)cc1'], ['CCCCN', 'CCNCC', 'CCCCO'], ['CCC(N)=O', 'CCC(=O)OC', 'CCCC#N'], ['OC(=O)c1ccccc1', 'O=Cc1ccc(O)cc1', 'COC(=O)c1ccccc1']
+];
+const SPC = new Map();
+function spec(smi) {
+  if (!SPC.has(smi)) { const m = fromSmiles(smi), e = entry(m); SPC.set(smi, { smi, e, ir: irBands(m), ms: massSpec(m) }); }
+  return SPC.get(smi);
+}
+const nm = e => getLang() === 'ko' ? e.res.nameKo : e.res.nameEn;
+const overlap = (a, b) => !(a.range[1] > b.range[0] || b.range[1] > a.range[0]);
+const IR_DEMO = { OH: 'CCCCO', OHacid: 'CCCC(=O)O', NH: 'CCCCN', CHsp: 'C#CCCCC', CHsp2: 'C=CCCCC', CHsp3: 'CCCCCC', CHO: 'CCCC=O', CN: 'CCC#N', CC3: 'C#CCCCC', COacylhalide: 'CC(Cl)=O', COester: 'CCOC(C)=O',
+  COaldehyde: 'CCCC=O', COketone: 'CCC(C)=O', COacid: 'CCCC(=O)O', COamide: 'CCCC(N)=O', CCdb: 'C=CCCCC', CCar: 'Cc1ccccc1', NO2: '[O-][N+](=O)c1ccccc1', CHb: 'CCCCCC', COs: 'CCOCC', oop: 'Cc1ccccc1', CCl: 'CCCCCl', CBr: 'CCCBr' };
+const bandList = s => `<ul class="sel q-bands">${s.ir.map((b, i) => ({ b, i })).filter(({ b }) => b.diag && b.str !== 'vw').map(({ b, i }) => `<li><b>${i + 1}</b> ${b.nu} cm⁻¹ — ${esc(b.vib)} (${esc(b.grp)})</li>`).join('')}</ul>`;
+function irtabQ() {
+  const t = pick(IR_TABLE), fwd = Math.random() < 0.5;
+  const key = x => fwd ? x.range.join('–') : x.bond + x.grp;
+  const opts = [t];
+  for (const x of shuffle(IR_TABLE.filter(x => x !== t))) { if (opts.length >= 4) break; if (opts.every(y => !overlap(x, y) && key(x) !== key(y))) opts.push(x); }
+  if (opts.length < 3) return null;
+  const demo = spec(IR_DEMO[t.id] || 'CCCCCC');
+  const shape = t.shape ? ', ' + t.shape : '';
+  return {
+    kind: 'irtab', e: demo.e, mol3d: demo.e, answer: t.id, open: ['spectra', { mol: demo.e.mol }], mono: fwd,
+    prompt: fwd ? `${t.grp}의 ${t.bond} 흡수가 나타나는 위치는? (cm⁻¹)` : `${t.range[0]}–${t.range[1]} cm⁻¹ 의 흡수(세기 ${STR_KO[t.str]}${shape})가 나타내는 결합과 작용기는?`,
+    pic: null,
+    opts: shuffle(opts.map(x => fwd ? { key: x.id, label: `${x.range[0]}–${x.range[1]}`, sub: '' } : { key: x.id, label: esc(x.bond), sub: x.grp })),
+    verdict: () => `<b>${esc(t.bond)} · ${esc(t.grp)}</b> — ${t.range[0]}–${t.range[1]} cm⁻¹, 세기 ${STR_KO[t.str]}${shape}`,
+    why: () => `${t.note ? `<p class="note">${esc(t.note)}.</p>` : ''}<p class="note">예: ${esc(nm(demo.e))} 의 예측 스펙트럼</p><div class="q-spec">${irSVG(demo.ir, { tips: false })}</div>${bandList(demo)}`
+  };
+}
+function irspecQ() {
+  for (let t = 0; t < 30; t++) {
+    const set = Math.random() < 0.6 ? pick(IR_SETS) : null;
+    const items = [];
+    for (const smi of shuffle((set || SP_POOL).slice())) {
+      const s = spec(smi);
+      if (!s.e.res) continue;
+      const sig = irSignature(s.ir);
+      if (items.some(x => x.sig === sig)) continue;
+      items.push({ s, sig });
+      if (items.length >= 4) break;
+    }
+    if (items.length < 3) continue;
+    const ans = items[0].s;
+    const opts = shuffle(items.map(x => ({ e: x.s.e, s: x.s, sig: x.sig })));
+    const desc = (s, k) => { const b = s.ir.find(x => sigKey(x) === k); return b ? `${b.vib.replace(' 신축', '')} ${b.nu} cm⁻¹ (${b.grp})` : k; };
+    return {
+      kind: 'specpick', e: ans.e, mol3d: ans.e, opts, correct: opts.find(o => o.s === ans), open: ['spectra', { mol: ans.e.mol }],
+      prompt: set ? `분자식 ${formulaText(ans.e.f)} 인 화합물의 IR 스펙트럼입니다. 해당하는 구조는?` : '이 IR 스펙트럼에 해당하는 화합물은?',
+      head: done => `<div class="q-spec">${irSVG(ans.ir, { marks: done, tips: false })}</div>`,
+      why: chosen => {
+        const A = new Set(opts.find(o => o.s === ans).sig.split(' '));
+        let x = `<p class="note">번호를 붙인 진단 흡수:</p>${bandList(ans)}`;
+        if (chosen && chosen.s !== ans) {
+          const B = new Set(chosen.sig.split(' '));
+          const need = [...B].filter(k => !A.has(k)).map(k => desc(chosen.s, k)), extra = [...A].filter(k => !B.has(k)).map(k => desc(ans, k));
+          x += `<p class="note">선택한 ${esc(nm(chosen.e))} 이라면${need.length ? ` ${esc(need.join(' · '))} 흡수가 나타나야 하고` : ''}${extra.length ? ` ${esc(extra.join(' · '))} 흡수는 없어야 합니다` : ''}.</p>`;
+        }
+        return x;
+      }
+    };
+  }
+  return null;
+}
+const MS_CAT = { Cl: '염소 원자 1개', Br: '브로민 원자 1개', N: '질소 원자 홀수 개', O: 'N · 할로젠 없음 (C · H · O)' };
+const catOf = c => { const hal = (c.Cl || 0) + (c.Br || 0) + (c.F || 0) + (c.I || 0); if (c.Cl === 1 && hal === 1 && !c.N) return 'Cl'; if (c.Br === 1 && hal === 1 && !c.N) return 'Br'; if (!hal && c.N % 2 === 1) return 'N'; if (!hal && !c.N && Object.keys(c).every(k => 'CHO'.includes(k))) return 'O'; return null; };
+function msionQ() {
+  const pool = [...SP_POOL, ...MS_MORE].map(spec).filter(s => s.e.res && s.ms.mRel >= 6);
+  if (Math.random() < 0.5) {
+    const cat = pick(Object.keys(MS_CAT)), list = pool.filter(x => catOf(x.ms.comp) === cat);
+    if (!list.length) return null;
+    const s = pick(list), ms = s.ms;
+    return {
+      kind: 'msion', e: s.e, mol3d: s.e, answer: cat, open: ['spectra', { mol: s.e.mol }],
+      prompt: '분자 이온(M⁺•) 영역으로 판단할 때, 이 화합물에 대해 옳은 것은?',
+      head: done => `<div class="q-spec">${msSVG(ms, { tips: false })}</div>${done ? `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : ''}`,
+      opts: shuffle(Object.keys(MS_CAT).map(k => ({ key: k, label: MS_CAT[k], sub: '' }))),
+      verdict: () => `<b>${MS_CAT[cat]}</b> · ${esc(nm(s.e))} (${formulaText(s.e.f)}, M = ${ms.M})`,
+      why: () => `<p class="note">M⁺• m/z ${ms.M} · M+1 ${ms.m1.toFixed(1)}% · M+2 ${ms.m2.toFixed(1)}%. ${cat === 'Cl' ? 'M : M+2 ≈ 3 : 1 은 ³⁵Cl · ³⁷Cl (75.8 : 24.2) 의 무늬입니다.' : cat === 'Br' ? 'M : M+2 ≈ 1 : 1 은 ⁷⁹Br · ⁸¹Br (50.7 : 49.3) 의 무늬입니다.' : cat === 'N' ? `M⁺• 가 홀수(${ms.M})이므로 질소 규칙에 따라 질소가 홀수 개입니다. M+2 는 작습니다.` : `M⁺• 가 짝수(${ms.M})이고 M+2 가 작아(${ms.m2.toFixed(1)}%) 염소 · 브로민이 없고, 질소도 없거나 짝수 개입니다.`}</p>`
+    };
+  }
+  const s = pick(pool), ms = s.ms;
+  const others = shuffle(pool.filter(x => x.ms.M !== ms.M && Math.abs(x.ms.M - ms.M) <= 50));
+  const items = [s];
+  for (const x of others) { if (items.length >= 4) break; if (items.every(y => y.ms.M !== x.ms.M)) items.push(x); }
+  if (items.length < 3) return null;
+  const opts = shuffle(items.map(x => ({ e: x.e, s: x })));
+  return {
+    kind: 'specpick', e: s.e, mol3d: s.e, opts, correct: opts.find(o => o.s === s), open: ['spectra', { mol: s.e.mol }],
+    prompt: '이 질량 스펙트럼에 해당하는 화합물은? (분자 이온 · 동위원소 피크로 판단)',
+    head: () => `<div class="q-spec">${msSVG(ms, { tips: false })}</div>`,
+    why: () => `<p class="note">M⁺• m/z ${ms.M} (${formulaText(s.e.f)})${isoPattern(ms) ? ' · ' + esc(isoPattern(ms)) : ''}${ms.M % 2 ? ' · M 이 홀수 → 질소 홀수 개' : ''}. 보기의 분자량: ${opts.map(o => `${esc(nm(o.e))} ${o.s.ms.M}`).join(' · ')}.</p>`
+  };
+}
+const LOSS = [['H•', 1], ['•CH₃', 15], ['•OH', 17], ['H₂O', 18], ['CH₂=CH₂', 28], ['•CH₂CH₃', 29], ['•OCH₃', 31], ['•Cl', 35], ['HCl', 36], ['CH₂=CHCH₃', 42], ['•CH₂CH₂CH₃', 43], ['•OCH₂CH₃', 45], ['•NO₂', 46], ['•C₆H₅', 77], ['•Br', 79]];
+function msfragQ() {
+  const pool = [...SP_POOL, ...MS_MORE];
+  for (let t = 0; t < 40; t++) {
+    const s = spec(pick(pool)), ms = s.ms;
+    if (!s.e.res) continue;
+    const cand = ms.peaks.filter(p => p.rel >= 12 && p.main.off === 0 && p.main.f.proc !== 'M' && p.parts.filter(x => x.f.proc === p.main.f.proc && x.off === 0).reduce((a, x) => a + x.I, 0) >= 0.75 * p.parts.reduce((a, x) => a + x.I, 0));
+    if (!cand.length) continue;
+    const nonCC = cand.filter(x => x.main.f.proc !== 'cc');
+    const p = pick(nonCC.length && Math.random() < 0.75 ? nonCC : cand), f = p.main.f;
+    const dm = ms.M - p.mz;
+    const pic = done => `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true, hl: done ? new Set(f.atoms) : new Set(), hlDots: true })}</div><div class="q-spec">${msSVG(ms, { mark: p.mz, tips: false })}</div>`;
+    const base = { e: s.e, mol3d: s.e, open: ['spectra', { mol: s.e.mol }], head: pic };
+    const tail = `<p class="note">m/z ${p.mz} = <span class="mono">${esc(f.text)}</span>${f.lost ? ` · 떨어진 조각 <span class="mono">${esc(f.lost)}</span> (${f.proc === 'sec' ? '조각 이온에서' : 'M − ' + dm})` : ''}. ${esc(PROC[f.proc].d)}</p><p class="hint">초록색: 이 이온에 남은 원자</p>`;
+    if (f.proc !== 'sec' && f.lost && Math.random() < 0.45) {
+      const opts = [{ key: 'ans', label: esc(f.lost), m: dm }];
+      for (const [txt, mm] of shuffle(LOSS.slice())) { if (opts.length >= 4) break; if (opts.every(o => o.m !== mm && o.label !== txt) && mm < ms.M) opts.push({ key: txt, label: txt, m: mm }); }
+      return { ...base, kind: 'msfrag', answer: 'ans', mono: true, prompt: `표시한 m/z ${p.mz} 피크는 분자 이온(m/z ${ms.M})에서 무엇이 떨어져 생긴 이온인가?`, opts: shuffle(opts.map(o => ({ key: o.key, label: o.label, sub: '' }))),
+        verdict: () => `<b>${esc(f.lost)}</b> (질량 ${dm}) 이탈 — ${esc(PROC[f.proc].ko)}`, why: () => tail };
+    }
+    /* 이 피크에 조금이라도 기여하는 과정은 오답 보기에서 뺀다 */
+    const here = new Set(p.parts.map(x => x.f.proc));
+    const seen = [...new Set(ms.ions.map(x => x.proc))].filter(x => x !== 'M' && !here.has(x));
+    const opts = [f.proc];
+    for (const k of [...shuffle(seen), ...shuffle(['alpha', 'acyl', 'mcl', 'dehyd', 'cx', 'benz', 'cc', 'allyl', 'co', 'nitro', 'hx'])]) { if (opts.length >= 4) break; if (!opts.includes(k) && !here.has(k) && PROC[k]) opts.push(k); }
+    return { ...base, kind: 'msfrag', answer: f.proc, prompt: `표시한 m/z ${p.mz} 피크(M − ${dm})를 만드는 과정은?`, opts: shuffle(opts.map(k => ({ key: k, label: esc(PROC[k].ko), sub: '' }))),
+      verdict: () => `<b>${esc(PROC[f.proc].ko)}</b> · m/z ${p.mz}`, why: () => tail };
+  }
+  return null;
+}
+function formulaQ() {
+  const pool = [...SP_POOL, ...MS_MORE, ...TEMPLATES.filter(t => t.kind === 'famous').map(t => t.smi)];
+  if (Math.random() < 0.55) {
+    const s = spec(pick(pool)), c = s.e.f.count, n = s.ms.ihd;
+    const X = (c.F || 0) + (c.Cl || 0) + (c.Br || 0) + (c.I || 0);
+    const R = rings(s.e.mol).list.length, pi = s.e.mol.bonds.reduce((a, b) => a + b.o - 1, 0);
+    const vals = [n];
+    for (const v of shuffle([n - 2, n - 1, n + 1, n + 2, n + 3, 2 * n])) { if (vals.length >= 4) break; if (v >= 0 && !vals.includes(v)) vals.push(v); }
+    return {
+      kind: 'formula', e: s.e, mol3d: s.e, answer: String(n), open: ['spectra', { mol: s.e.mol }],
+      prompt: `분자식 ${formulaText(s.e.f)} 의 불포화도(고리 수 + π 결합 수)는?`,
+      head: done => done ? `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : '',
+      opts: shuffle(vals).map(v => ({ key: String(v), label: String(v), sub: '' })),
+      verdict: () => `<b>${n}</b>${s.e.res ? ' · ' + esc(nm(s.e)) : ''}`,
+      why: () => `<p class="note">불포화도 = (2C + 2 + N − H − X) ÷ 2 = (2 × ${c.C || 0} + 2 + ${c.N || 0} − ${c.H || 0} − ${X}) ÷ 2 = <b>${n}</b>. 산소 · 황은 계산에 넣지 않고, 할로젠은 수소처럼 셉니다. 이 구조는 고리 ${R}개 + π 결합 ${pi}개입니다.</p>`
+    };
+  }
+  const cands = pool.map(spec).filter(s => s.e.res && s.ms.alts.length >= 3);
+  const s = pick(cands), ms = s.ms;
+  const own = ms.alts.find(a => a.self), rest = shuffle(ms.alts.filter(a => !a.self)).slice(0, 3);
+  const opts = shuffle([own, ...rest].map(a => ({ key: a.f, label: a.f, sub: '', a })));
+  return {
+    kind: 'formula', e: s.e, mol3d: s.e, answer: ms.formula, open: ['spectra', { mol: s.e.mol }], mono: true,
+    prompt: `고분해능 질량 분석에서 분자 이온의 정밀 질량이 ${ms.exact.toFixed(4)} 로 측정되었다 (정수 질량 ${ms.M}). 분자식은?`,
+    head: done => done ? `<div class="q-struct small">${drawMolecule(s.e.mol, s.e.res, { mode: mode(), locants: false, chain: false, compact: true })}</div>` : '',
+    opts, verdict: () => `<b>${ms.formula}</b> · ${esc(nm(s.e))}`,
+    why: () => `<p class="note">보기의 정밀 질량: ${opts.map(o => `${o.a.f} ${o.a.exact.toFixed(4)}`).join(' · ')}. 원자의 정밀 질량(¹H 1.00783 · ¹²C 12.00000 · ¹⁴N 14.00307 · ¹⁶O 15.99491)이 정수가 아니어서, 정수 질량이 같아도 소수점 아래에서 구별됩니다.</p>`
+  };
+}
+
 export function mount(root, app, params) {
   /* 옛 설정(방식 네 가지) → 분야 */
   const oldMode = store.get('quizMode', 'name');
@@ -439,14 +612,14 @@ export function mount(root, app, params) {
     topic: store.get('quizTopic', {}), dir: store.get('quizDir', oldMode === 'struct' ? 'struct' : 'name'), level: store.get('quizLevel', 'easy'), rx: store.get('quizRx', 'prod'),
     score: store.get('quizScore2', { right: 0, total: 0, streak: 0, best: 0 }), stats: store.get('quizStats', {}), q: null, done: false, chosen: null
   };
-  if (params && params.mode) { S.area = { react: 'react', rs: 'stereo', name: 'name', struct: 'name' }[params.mode] || S.area; if (params.mode === 'struct') S.dir = 'struct'; }
+  if (params && params.mode) { S.area = { react: 'react', rs: 'stereo', name: 'name', struct: 'name', spec: 'spec' }[params.mode] || S.area; if (params.mode === 'struct') S.dir = 'struct'; }
   if (params && params.cat && S.area === 'react') S.topic.react = params.cat;
   const areaOf = () => AREAS.find(a => a.id === S.area) || AREAS[0];
   const topicOf = () => { const a = areaOf(); const t = S.topic[a.id]; return a.topics.some(x => x.id === t) ? t : a.topics[0].id; };
   const key = () => S.area + ':' + topicOf();
 
   root.innerHTML = `<section class="page"><div class="quiz">
-    <p class="eyebrow"><span class="bar"></span>05 — PRACTICE</p>
+    <p class="eyebrow"><span class="bar"></span>06 — PRACTICE</p>
     <h1 class="title">PRACTICE<small>연습 문제</small></h1>
     <div class="q-areas" role="tablist" aria-label="분야">${AREAS.map(a => `<button type="button" role="tab" data-area="${a.id}">${a.ko}</button>`).join('')}</div>
     <details class="q-topics-box"${innerWidth >= 700 ? ' open' : ''}><summary><span class="lbl">주제</span><b class="q-cur"></b><small>바꾸기</small></summary><div class="q-topics" role="radiogroup" aria-label="주제"></div></details>
@@ -488,6 +661,10 @@ export function mount(root, app, params) {
       const k = t === 'mix' ? pick(['rs1', 'rsN', 'cip', 'ct', 'ez', 'meso']) : t;
       return { rs1: () => rsQ('easy'), rsN: () => rsQ('hard'), cip: () => cipQ(Math.random() < 0.6 ? 'easy' : 'hard'), ct: ctQ, ez: ezQ, meso: mesoQ }[k]();
     }
+    if (a === 'spec') {
+      const k = t === 'mix' ? pick(['irtab', 'irspec', 'msion', 'msfrag', 'formula']) : t;
+      return { irtab: irtabQ, irspec: irspecQ, msion: msionQ, msfrag: msfragQ, formula: formulaQ }[k]();
+    }
     const k = t === 'mix' ? pick(['identify', 'principal', 'affix']) : t;
     return { identify: identifyQ, principal: principalQ, affix: affixQ }[k]();
   }
@@ -501,7 +678,7 @@ export function mount(root, app, params) {
     if (q.mol3d && q.mol3d.res) app.setMol(q.mol3d);
     draw();
   }
-  const actions = () => `<div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">${S.q.open[0] === 'react' ? '반응 예측에서 열기' : S.q.open[0] === 'groups' ? '작용기 페이지에서 보기' : '편집기에서 열기'}</button></div>`;
+  const actions = () => `<div class="q-actions"><button class="btn solid" type="button" id="q-next">다음 문제</button><button class="btn" type="button" id="q-open">${{ react: '반응 예측에서 열기', groups: '작용기 페이지에서 보기', spectra: '스펙트럼 자세히 보기' }[S.q.open[0]] || '편집기에서 열기'}</button></div>`;
   function wire() {
     card.querySelectorAll('.q-opt').forEach(b => b.addEventListener('click', () => answer(S.q.opts[+b.dataset.i])));
     if (S.done) {
@@ -515,6 +692,7 @@ export function mount(root, app, params) {
     const q = S.q, chosen = S.chosen, done = S.done;
     let head = `<p class="q-prompt">${q.prompt}</p>`;
     if (q.kind === 'reagent') head += `<div class="q-rx">${small(q.sub)}<div class="rx-arrow"><span class="rx-reagent">?</span><svg viewBox="0 0 120 16" aria-hidden="true"><path d="M2 8h112M104 2l10 6-10 6"/></svg></div>${small(q.prod)}</div>`;
+    else if (q.head) head += q.head(done);
     else if (q.pic) head += `<div class="q-struct">${q.pic(done)}</div>`;
     const big = ['rs', 'ct', 'ez', 'meso'].includes(q.kind);
     const opts = q.opts.map((o, i) => {
@@ -546,6 +724,7 @@ export function mount(root, app, params) {
     let head;
     if (q.kind === 'react') head = `<p class="q-prompt">주생성물은?</p><div class="q-rx">${small(q.sub)}<div class="rx-arrow"><span class="rx-reagent">${q.res.reaction.label}</span><svg viewBox="0 0 120 16" aria-hidden="true"><path d="M2 8h112M104 2l10 6-10 6"/></svg></div><span class="q-what">?</span></div>`;
     else if (q.kind === 'name') head = `<p class="q-prompt">이 분자의 IUPAC 이름은?</p><div class="q-struct">${small(q.e)}</div>`;
+    else if (q.kind === 'specpick') head = `<p class="q-prompt">${q.prompt}</p>${q.head(done)}`;
     else head = `<p class="q-prompt">이 이름에 해당하는 구조는?</p><p class="q-name">${tokensHTML(getLang() === 'ko' ? q.e.res.ko : q.e.res.en)}</p>`;
     const opts = q.opts.map((o, i) => {
       const cls = !done ? '' : o === q.correct ? ' right' : o === chosen ? ' wrong' : '';
@@ -558,7 +737,8 @@ export function mount(root, app, params) {
     if (done) {
       const right = chosen === q.correct;
       const verdict = `<p class="q-verdict ${right ? 'ok' : 'no'}"><b>${right ? '정답' : '오답'}</b> — ${esc(q.correct.e.res.nameEn)} · ${esc(q.correct.e.res.nameKo)}</p>`;
-      if (q.kind === 'react') {
+      if (q.kind === 'specpick') fb = `<div class="q-feedback">${verdict}${q.why(chosen)}${actions()}</div>`;
+      else if (q.kind === 'react') {
         const r = q.res;
         fb = `<div class="q-feedback">${verdict}<p class="note">${esc(r.mech || '')}</p>
           <ol class="steps" style="padding:0">${(r.steps || []).map(s => `<li><div><span class="sk">${esc(s.t)}</span>${s.d}</div></li>`).join('')}</ol>
@@ -573,7 +753,7 @@ export function mount(root, app, params) {
     card.innerHTML = head + `<div class="q-opts">${opts}</div>` + fb;
     wire();
   }
-  function draw() { if (['name', 'struct', 'react'].includes(S.q.kind)) drawPic(); else drawText(); }
+  function draw() { if (['name', 'struct', 'react', 'specpick'].includes(S.q.kind)) drawPic(); else drawText(); }
   function answer(o) {
     if (S.done) return;
     S.done = true; S.chosen = o;

@@ -60,7 +60,7 @@ export function mount(root, app, params) {
         <div class="blk blk-tools panel"><h2 class="lbl">편집</h2><div class="tools-row">
           <button class="btn" type="button" id="b-undo">실행 취소</button><button class="btn" type="button" id="b-redo">다시 실행</button>
           <button class="btn" type="button" id="b-tidy">구조 정리</button><button class="btn" type="button" id="b-rand">무작위 생성</button>
-          <button class="btn" type="button" id="b-3d">3D 보기</button><button class="btn solid" type="button" id="b-react">반응 예측 →</button></div></div>
+          <button class="btn" type="button" id="b-3d">3D 보기</button><button class="btn" type="button" id="b-spec">스펙트럼 →</button><button class="btn solid" type="button" id="b-react">반응 예측 →</button></div></div>
       </div>
       <div class="stage panel ticks">
         <div class="stage-top"><p class="lbl">구조식</p>
@@ -282,6 +282,7 @@ export function mount(root, app, params) {
     }
   });
   q('#b-react').addEventListener('click', () => app.go('react', { mol: S.mol }));
+  q('#b-spec').addEventListener('click', () => app.go('spectra', { mol: S.mol }));
   const focus = on => {
     app.focus3d(on);
     q('.focus-bar').hidden = !on;
